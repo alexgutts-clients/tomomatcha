@@ -162,14 +162,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               </span>
             </div>
 
-            <div className="flex items-center gap-2.5">
-              <button
-                onClick={() => setWelcomeOpen(true)}
-                aria-label="Abrir guía de la demo"
-                className="focus-ring rounded-full p-2 text-muted hover:bg-cream hover:text-ink lg:hidden"
-              >
-                <Icons.help />
-              </button>
+            <div className="flex shrink-0 items-center gap-2.5">
               <div
                 className="flex rounded-full border border-line bg-white p-1"
                 role="group"

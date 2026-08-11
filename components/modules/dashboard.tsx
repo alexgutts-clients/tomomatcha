@@ -194,7 +194,7 @@ export function DashboardModule() {
 
           {/* -------------------------- Alertas de insumos -------------------------- */}
           {state.flags.inventario ? (
-            <Card className={cx(lowStock.length && "border-amber/40")}>
+            <Card className={cx(lowStock.length > 0 && "border-amber/40")}>
               <div className="flex items-center justify-between">
                 <p className="eyebrow">Insumos por resurtir</p>
                 <Link href="/inventario" className="focus-ring text-xs font-extrabold text-matcha-deep hover:underline">

@@ -220,7 +220,6 @@ function generateHistory(): History {
 
       if (customer) {
         customer.lastVisit = iso;
-        if (!isActive) customer.visits += 0; // las visitas semilla ya están contadas
       }
 
       orders.push({
