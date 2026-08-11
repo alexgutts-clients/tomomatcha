@@ -181,7 +181,7 @@ export function CashCloseModule() {
                 <Badge tone="ink">Turno cerrado</Badge>
               </div>
               <p className="mt-1 text-xs text-muted">
-                Cerró {todayClose.closedBy} a las {time(todayClose.closedAt)}.
+                Cerró {todayClose.closedBy} a las {time(todayClose.closedAt)}
               </p>
 
               <dl className="mt-4 divide-y divide-line">
