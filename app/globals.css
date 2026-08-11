@@ -1,0 +1,72 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=Manrope:wght@400;500;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ink: #191a14;
+  --ink-soft: #262820;
+  --paper: #faf7ef;
+  --cream: #f1ebda;
+  --matcha: #7a8c54;
+  --matcha-deep: #4c5a32;
+  --matcha-light: #dce8c0;
+  --matcha-mist: #eef2e0;
+  --muted: #71705f;
+  --line: rgba(25, 26, 20, 0.1);
+  --amber: #a8741d;
+  --danger: #b03e28;
+  --font-display: "Fraunces", "Iowan Old Style", Georgia, serif;
+  --font-sans: "Manrope", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01";
+}
+
+::selection {
+  background: var(--matcha-light);
+  color: var(--ink);
+}
+
+@layer components {
+  .display {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+
+  .eyebrow {
+    @apply text-[11px] font-extrabold uppercase tracking-[0.18em] text-matcha-deep;
+  }
+
+  .card {
+    @apply rounded-xl2 border border-line bg-white shadow-card;
+  }
+
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-matcha focus-visible:ring-offset-2 focus-visible:ring-offset-paper;
+  }
+
+  .scrollbar-slim::-webkit-scrollbar {
+    height: 6px;
+    width: 6px;
+  }
+  .scrollbar-slim::-webkit-scrollbar-thumb {
+    background: var(--line);
+    border-radius: 999px;
+  }
+}
+
+/* Fake QR pattern cell — pure decoration, explicitly a demo visual */
+.qr-cell {
+  fill: var(--ink);
+}
