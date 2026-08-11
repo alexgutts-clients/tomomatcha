@@ -74,7 +74,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="px-6 pb-2 pt-7">
           <div className="flex items-center justify-between">
             <Link href="/inicio" className="focus-ring rounded-lg">
-              <span className="display text-[26px] leading-none">
+              <span className="display text-[21px] leading-none">
                 Tomo<span className="text-matcha-light">Matcha</span>
               </span>
             </Link>
@@ -148,7 +148,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <header className="sticky top-0 z-30 border-b border-line bg-paper/90 backdrop-blur">
           <div className="flex items-center justify-between gap-3 px-4 py-3 md:px-8">
             <div className="flex min-w-0 items-center gap-3">
-              <span className="display text-xl lg:hidden">
+              <span className="display text-lg lg:hidden">
                 Tomo<span className="text-matcha-deep">Matcha</span>
               </span>
               <span className="hidden text-sm font-semibold capitalize text-muted lg:block">
