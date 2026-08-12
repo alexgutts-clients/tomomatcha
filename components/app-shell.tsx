@@ -72,9 +72,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       {/* ------------------------------ Sidebar ------------------------------- */}
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-[250px] flex-col bg-ink text-paper lg:flex">
         <div className="px-6 pb-2 pt-7">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <Link href="/inicio" className="focus-ring rounded-lg">
-              <span className="display text-[21px] leading-none">
+              <span className="display text-xl leading-none">
                 Tomo<span className="text-matcha-light">Matcha</span>
               </span>
             </Link>
@@ -148,10 +148,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         <header className="sticky top-0 z-30 border-b border-line bg-paper/90 backdrop-blur">
           <div className="flex items-center justify-between gap-3 px-4 py-3 md:px-8">
             <div className="flex min-w-0 items-center gap-3">
-              <span className="display text-lg lg:hidden">
+              <span className="display text-xl lg:hidden">
                 Tomo<span className="text-matcha-deep">Matcha</span>
               </span>
-              <span className="hidden text-sm font-semibold capitalize text-muted lg:block">
+              <span className="hidden text-sm font-semibold text-muted first-letter:uppercase lg:block">
                 {longDate(new Date().toISOString())}
               </span>
               <span className="lg:hidden">

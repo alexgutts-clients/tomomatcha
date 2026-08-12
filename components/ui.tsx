@@ -95,7 +95,7 @@ export function Badge({
 
 export function DemoTag({ label = "Demo" }: { label?: string }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-matcha/50 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.14em] text-matcha-deep">
+    <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-matcha/50 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.14em] text-matcha-deep">
       <span className="h-1.5 w-1.5 animate-pulseDot rounded-full bg-matcha" aria-hidden />
       {label}
     </span>
