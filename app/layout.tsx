@@ -1,5 +1,20 @@
 import type { Metadata, Viewport } from "next";
+import { Inter, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
+
+// Las fuentes se auto-hospedan en el build: la demo no pide nada a internet.
+const display = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  weight: ["500", "600", "700", "800"],
+  variable: "--font-display",
+  display: "swap",
+});
+
+const sans = Inter({
+  subsets: ["latin"],
+  variable: "--font-sans",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "TomoMatcha · Demo de operación",
@@ -17,7 +32,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="es-MX">
+    <html lang="es-MX" className={`${display.variable} ${sans.variable}`}>
       <body className="antialiased">{children}</body>
     </html>
   );

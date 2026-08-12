@@ -56,12 +56,14 @@ Los módulos apagados muestran un aviso claro de "apagado por configuración".
 
 - ~20 productos (matcha, café, té, bakery) con recetas, ~26 insumos, 8 clientes con puntos, ventas de los últimos 7 días y cortes de caja históricos.
 - **Reiniciar demo** (menú lateral → Reiniciar, o Ajustes → Restablecer) regresa todo al estado inicial.
+- Los cambios que hagas se conservan durante el día. Al abrir la demo un día distinto, los datos se regeneran solos para que la jornada siempre se vea viva (comandas en curso, ventas del día, corte pendiente).
 - No existen credenciales: nada que recordar ni configurar.
 
 ## Stack
 
 - [Next.js](https://nextjs.org) 15 (App Router) + React 19 + TypeScript estricto
 - Tailwind CSS 3 — sin librerías de gráficas ni dependencias pesadas (todas las visualizaciones son CSS/SVG propios)
+- Tipografía Plus Jakarta Sans + Inter, auto-hospedada con `next/font`: la app **no hace ninguna petición externa** en tiempo de ejecución
 - Estado central en React Context con persistencia versionada en `localStorage`
 
 ## Despliegue en Vercel

@@ -1,5 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap");
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -17,8 +15,7 @@
   --line: rgba(25, 26, 20, 0.1);
   --amber: #a8741d;
   --danger: #b03e28;
-  --font-display: "Plus Jakarta Sans", "Segoe UI", system-ui, sans-serif;
-  --font-sans: "Inter", "Segoe UI", system-ui, sans-serif;
+  /* --font-display y --font-sans los define next/font en <html> */
 }
 
 html {

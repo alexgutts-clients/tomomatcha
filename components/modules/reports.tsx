@@ -29,10 +29,18 @@ export function ReportsModule() {
   if (state.role === "empleado") return <AccessGate module="Reportes" />;
 
   const tKey = todayKey();
+  // Ventana de 7 días: la misma que grafica "Ventas por día", para que los
+  // totales de arriba siempre cuadren con las barras de abajo.
+  const weekKeys = new Set<string>();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    weekKeys.add(dayKey(d.toISOString()));
+  }
   const filtered =
     range === "hoy"
       ? state.orders.filter((o) => dayKey(o.createdAt) === tKey)
-      : state.orders;
+      : state.orders.filter((o) => weekKeys.has(dayKey(o.createdAt)));
   const rangeText = range === "hoy" ? "hoy" : "últimos 7 días";
 
   const ingresos = filtered.reduce((sum, o) => sum + o.total, 0);
@@ -51,6 +59,7 @@ export function ReportsModule() {
     const iso = d.toISOString();
     days.push({ key: dayKey(iso), label: weekday(iso), total: 0 });
   }
+
   for (const o of state.orders) {
     const slot = days.find((d) => d.key === dayKey(o.createdAt));
     if (slot) slot.total += o.total;

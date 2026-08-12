@@ -67,7 +67,17 @@ function loadState(): DemoState {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as DemoState;
-      if (parsed && parsed.version === STATE_VERSION) return parsed;
+      // Se conserva el estado solo si es de la misma versión y del mismo día:
+      // así la demo nunca abre con comandas de ayer "en preparación" y un día
+      // de ventas vacío.
+      if (
+        parsed &&
+        parsed.version === STATE_VERSION &&
+        parsed.seededAt &&
+        dayKey(parsed.seededAt) === todayKey()
+      ) {
+        return parsed;
+      }
     }
   } catch {
     /* estado corrupto: se regenera la demo */

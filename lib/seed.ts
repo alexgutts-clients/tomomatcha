@@ -15,7 +15,7 @@ import {
 } from "./types";
 import { dayKey } from "./format";
 
-export const STATE_VERSION = 3;
+export const STATE_VERSION = 4;
 
 /* ---------------------------------- Insumos --------------------------------- */
 
@@ -69,16 +69,18 @@ const extras: ExtraOption[] = [
 /* --------------------------------- Productos --------------------------------- */
 
 const DRINK = { milk: true, sweetness: true, temperature: true, extras: true };
+/** Bebidas que solo existen frías: sin selector de temperatura */
+const COLD = { milk: true, sweetness: true, temperature: false, extras: true };
 const TEA = { milk: false, sweetness: true, temperature: true, extras: false };
 const FOOD = { milk: false, sweetness: false, temperature: false, extras: false };
 
 const products: Product[] = [
   // Matcha
   { id: "matcha-latte", name: "Matcha Latte", category: "matcha", price: 95, emoji: "🍵", popular: true, active: true, desc: "Matcha grado latte batido con leche cremosa.", mods: DRINK, recipe: [{ ingredientId: "matcha-latte", qty: 4 }, { ingredientId: "milk", qty: 240 }, { ingredientId: "vaso-12", qty: 1 }] },
-  { id: "iced-matcha", name: "Iced Matcha", category: "matcha", price: 98, emoji: "🧊", popular: true, active: true, desc: "Matcha frío sobre hielo, refrescante y vibrante.", mods: DRINK, recipe: [{ ingredientId: "matcha-latte", qty: 4 }, { ingredientId: "milk", qty: 200 }, { ingredientId: "hielo", qty: 140 }, { ingredientId: "vaso-16", qty: 1 }] },
+  { id: "iced-matcha", name: "Iced Matcha", category: "matcha", price: 98, emoji: "🧊", popular: true, active: true, desc: "Matcha frío sobre hielo, refrescante y vibrante.", mods: COLD, recipe: [{ ingredientId: "matcha-latte", qty: 4 }, { ingredientId: "milk", qty: 200 }, { ingredientId: "hielo", qty: 140 }, { ingredientId: "vaso-16", qty: 1 }] },
   { id: "dirty-matcha", name: "Dirty Matcha", category: "matcha", price: 110, emoji: "🌗", popular: true, active: true, desc: "Matcha latte con shot de espresso encima.", mods: DRINK, recipe: [{ ingredientId: "matcha-latte", qty: 4 }, { ingredientId: "cafe-grano", qty: 18 }, { ingredientId: "milk", qty: 220 }, { ingredientId: "vaso-12", qty: 1 }] },
   { id: "matcha-ceremonial", name: "Matcha Ceremonial (Usucha)", category: "matcha", price: 85, emoji: "🌿", active: true, desc: "Matcha Uji batido en agua, servicio tradicional.", mods: { milk: false, sweetness: false, temperature: false, extras: false }, recipe: [{ ingredientId: "matcha-ceremonial", qty: 2 }, { ingredientId: "vaso-12", qty: 1 }] },
-  { id: "matcha-fresa", name: "Matcha Fresa", category: "matcha", price: 105, emoji: "🍓", popular: true, active: true, desc: "Capas de puré de fresa, leche y matcha frío.", mods: DRINK, recipe: [{ ingredientId: "matcha-latte", qty: 3 }, { ingredientId: "fresa", qty: 60 }, { ingredientId: "milk", qty: 180 }, { ingredientId: "hielo", qty: 120 }, { ingredientId: "vaso-16", qty: 1 }] },
+  { id: "matcha-fresa", name: "Matcha Fresa", category: "matcha", price: 105, emoji: "🍓", popular: true, active: true, desc: "Capas de puré de fresa, leche y matcha frío.", mods: COLD, recipe: [{ ingredientId: "matcha-latte", qty: 3 }, { ingredientId: "fresa", qty: 60 }, { ingredientId: "milk", qty: 180 }, { ingredientId: "hielo", qty: 120 }, { ingredientId: "vaso-16", qty: 1 }] },
   { id: "matcha-yuzu", name: "Matcha Yuzu Lemonade", category: "matcha", price: 99, emoji: "🍋", active: true, desc: "Limonada de yuzu coronada con matcha frío.", mods: { milk: false, sweetness: true, temperature: false, extras: false }, recipe: [{ ingredientId: "matcha-latte", qty: 3 }, { ingredientId: "yuzu", qty: 40 }, { ingredientId: "hielo", qty: 150 }, { ingredientId: "vaso-16", qty: 1 }] },
   { id: "hojicha-latte", name: "Hojicha Latte", category: "matcha", price: 92, emoji: "🍂", active: true, desc: "Té verde tostado, notas de caramelo y humo.", mods: DRINK, recipe: [{ ingredientId: "hojicha", qty: 4 }, { ingredientId: "milk", qty: 240 }, { ingredientId: "vaso-12", qty: 1 }] },
   // Café
@@ -87,7 +89,7 @@ const products: Product[] = [
   { id: "latte", name: "Latte", category: "cafe", price: 70, emoji: "🥛", popular: true, active: true, desc: "Espresso con leche vaporizada y microespuma.", mods: DRINK, recipe: [{ ingredientId: "cafe-grano", qty: 18 }, { ingredientId: "milk", qty: 240 }, { ingredientId: "vaso-12", qty: 1 }] },
   { id: "capuchino", name: "Capuchino", category: "cafe", price: 68, emoji: "☁️", active: true, desc: "Partes iguales de espresso, leche y espuma.", mods: DRINK, recipe: [{ ingredientId: "cafe-grano", qty: 18 }, { ingredientId: "milk", qty: 180 }, { ingredientId: "vaso-12", qty: 1 }] },
   { id: "flat-white", name: "Flat White", category: "cafe", price: 74, emoji: "🤍", active: true, desc: "Doble shot con leche sedosa, intenso y corto.", mods: DRINK, recipe: [{ ingredientId: "cafe-grano", qty: 36 }, { ingredientId: "milk", qty: 160 }, { ingredientId: "vaso-12", qty: 1 }] },
-  { id: "cold-brew", name: "Cold Brew", category: "cafe", price: 72, emoji: "🧋", active: true, desc: "Extracción en frío 16 h, servido sobre hielo.", mods: { milk: true, sweetness: true, temperature: false, extras: true }, recipe: [{ ingredientId: "cafe-grano", qty: 30 }, { ingredientId: "hielo", qty: 150 }, { ingredientId: "vaso-16", qty: 1 }] },
+  { id: "cold-brew", name: "Cold Brew", category: "cafe", price: 72, emoji: "🧋", active: true, desc: "Extracción en frío 16 h, servido sobre hielo.", mods: COLD, recipe: [{ ingredientId: "cafe-grano", qty: 30 }, { ingredientId: "hielo", qty: 150 }, { ingredientId: "vaso-16", qty: 1 }] },
   // Té
   { id: "sencha", name: "Té Verde Sencha", category: "te", price: 58, emoji: "🫖", active: true, desc: "Infusión ligera de hoja entera japonesa.", mods: TEA, recipe: [{ ingredientId: "te-sencha", qty: 5 }, { ingredientId: "vaso-12", qty: 1 }] },
   { id: "jazmin", name: "Té de Jazmín", category: "te", price: 58, emoji: "🌸", active: true, desc: "Té verde perfumado con flor de jazmín.", mods: TEA, recipe: [{ ingredientId: "te-jazmin", qty: 5 }, { ingredientId: "vaso-12", qty: 1 }] },
@@ -180,18 +182,23 @@ function generateHistory(): History {
     const day = new Date(now);
     day.setDate(now.getDate() - daysAgo);
     const isToday = daysAgo === 0;
-    // Día actual: solo pedidos de la mañana hasta "ahora"
+    // Día actual: solo pedidos desde la apertura hasta "ahora"
     const count = isToday ? 9 : 11 + Math.floor(rnd() * 8);
     let dayCash = 0;
     let dayCard = 0;
 
+    // La jornada de hoy termina en este instante y empieza a las 8:00; si la
+    // demo se abre de madrugada, se comprime hacia atrás para que ningún
+    // pedido quede fechado en el futuro.
+    const endMin = now.getHours() * 60 + now.getMinutes();
+    const startMin = Math.max(0, Math.min(8 * 60, endMin - 90));
+    const spanMin = Math.max(45, endMin - startMin);
+
     for (let i = 0; i < count; i++) {
       const created = new Date(day);
       if (isToday) {
-        const nowMin = now.getHours() * 60 + now.getMinutes();
-        const startMin = 8 * 60;
-        const span = Math.max(45, nowMin - startMin);
-        created.setHours(8, Math.floor((span / count) * i + rnd() * 12), Math.floor(rnd() * 60), 0);
+        const at = startMin + Math.floor((spanMin / count) * i + rnd() * 8);
+        created.setHours(0, Math.min(at, endMin), Math.floor(rnd() * 60), 0);
       } else {
         created.setHours(8 + Math.floor(rnd() * 10), Math.floor(rnd() * 60), Math.floor(rnd() * 60), 0);
       }

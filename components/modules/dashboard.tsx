@@ -68,12 +68,20 @@ export function DashboardModule() {
         />
         <Stat label="Tickets" value={todayOrders.length} hint={`Ticket promedio ${money(avgTicket)}`} />
         <Stat label="Piezas vendidas" value={todayUnits} hint="Bebidas y bakery" />
-        <Stat
-          label="Alertas de insumos"
-          value={lowStock.length}
-          hint={lowStock.length ? "Revisar inventario" : "Todo abastecido"}
-          tone={lowStock.length ? "amber" : "neutral"}
-        />
+        {state.flags.inventario ? (
+          <Stat
+            label="Alertas de insumos"
+            value={lowStock.length}
+            hint={lowStock.length ? "Revisar inventario" : "Todo abastecido"}
+            tone={lowStock.length ? "amber" : "neutral"}
+          />
+        ) : (
+          <Stat
+            label="Clientes de lealtad"
+            value={state.customers.length}
+            hint="Módulo de inventario apagado"
+          />
+        )}
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[1.4fr_1fr]">
@@ -165,7 +173,7 @@ export function DashboardModule() {
         <div className="space-y-5">
           {/* ---------------------------- Top productos ---------------------------- */}
           <Card>
-            <p className="eyebrow">Más vendidos · semana</p>
+            <p className="eyebrow">Más vendidos · histórico</p>
             <div className="mt-4 space-y-3">
               {topProducts.slice(0, 5).map((entry, i) => (
                 <div key={entry.product!.id} className="flex items-center gap-3">
