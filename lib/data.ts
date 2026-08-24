@@ -206,6 +206,7 @@ function parseModifiers(raw: Json): LineModifiers {
 
 function toOrderItem(row: OrderItemRow): OrderItem {
   return {
+    id: row.id,
     productId: row.product_id,
     name: row.name,
     emoji: row.emoji,

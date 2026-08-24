@@ -58,6 +58,7 @@ Tres decisiones que vale la pena conocer antes de tocar el código:
 | Productos y recetas | `/productos` | Administrador |
 | Reportes | `/reportes` | Administrador |
 | Clientes y lealtad | `/clientes` | Administrador · módulo |
+| Administración de pedidos | `/pedidos` | Administrador |
 | Corte de caja | `/corte` | Administrador |
 | Ajustes | `/ajustes` | Administrador |
 | Tarjeta del cliente | `/tarjeta/<token>` | Público (por QR) |
@@ -122,6 +123,7 @@ El esquema vive en `supabase/migrations/` y es la única fuente de verdad:
 | `20260824000004_harden_function_grants.sql` | Quita `EXECUTE` a `PUBLIC` sobre las funciones |
 | `20260824000007_propina.sql` | Propina en el ticket y en el corte de caja |
 | `20260824000008_delete_order.sql` | `delete_order`: borrar una venta y sus efectos |
+| `20260824000009_delete_order_item.sql` | `delete_order_item`: quitar un renglón y rehacer cuentas |
 
 `lib/database.types.ts` es el espejo en TypeScript del esquema. **Al cambiar una
 migración hay que actualizarlo**, o el tipado dejará de proteger.
@@ -190,6 +192,13 @@ scripts/doctor.mjs  Revisión de conexiones
   contando y lo marcan como «fuera del menú». Lo que se pierde es la receta.
 - **Anular un ticket** devuelve los insumos y retira los puntos, y sólo se puede
   antes de cerrar el corte de ese día.
+- **Administración de pedidos** (`/pedidos`) reúne lo anterior en un solo lugar:
+  desde ahí se quita un producto suelto de un ticket o se borra el ticket
+  entero. Quitar un renglón devuelve sus insumos y rehace las cuentas del
+  ticket (subtotal, total y puntos); la propina se conserva tal como la dejó el
+  cliente, y sólo se recorta si el consumo baja por debajo de ella. El último
+  renglón no se puede quitar: un ticket vacío no significa nada, y para eso
+  está borrar el ticket.
 - **Borrar un ticket** es otra cosa distinta de anularlo, y sólo lo puede hacer
   un administrador. Anular conserva la venta porque ocurrió y el histórico tiene
   que poder explicarla; borrar la elimina de la base. Existe para limpiar datos

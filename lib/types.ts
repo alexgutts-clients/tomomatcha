@@ -106,6 +106,8 @@ export interface LineModifiers {
 }
 
 export interface OrderItem {
+  /** Identificador del renglón, necesario para poder quitarlo del ticket. */
+  id: string;
   productId: string | null;
   name: string;
   emoji: string;

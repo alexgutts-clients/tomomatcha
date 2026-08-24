@@ -7,6 +7,7 @@ import { UserButton } from "@clerk/nextjs";
 import { useDerived, useStore } from "@/lib/store";
 import { longDate } from "@/lib/format";
 import { daysUntil } from "@/lib/types";
+import { SHOW_LEALTAD_UI } from "@/lib/feature-visibility";
 import { Icons, type IconName } from "./icons";
 import { Badge, Modal, ToastViewport, cx } from "./ui";
 
@@ -27,7 +28,19 @@ const NAV: NavItem[] = [
   { href: "/preparados", label: "Productos preparados", short: "Preparados", icon: "preparados", employee: false },
   { href: "/productos", label: "Productos", short: "Productos", icon: "productos", employee: false },
   { href: "/reportes", label: "Reportes", short: "Reportes", icon: "reportes", employee: false },
-  { href: "/clientes", label: "Clientes y lealtad", short: "Clientes", icon: "clientes", employee: false },
+  // Clientes y lealtad está oculto temporalmente (ver SHOW_LEALTAD_UI).
+  ...(SHOW_LEALTAD_UI
+    ? [
+        {
+          href: "/clientes",
+          label: "Clientes y lealtad",
+          short: "Clientes",
+          icon: "clientes",
+          employee: false,
+        } as NavItem,
+      ]
+    : []),
+  { href: "/pedidos", label: "Administración de pedidos", short: "Pedidos", icon: "comandas", employee: false },
   { href: "/corte", label: "Corte de caja", short: "Corte", icon: "corte", employee: false },
   { href: "/ajustes", label: "Ajustes", short: "Ajustes", icon: "ajustes", employee: false },
 ];

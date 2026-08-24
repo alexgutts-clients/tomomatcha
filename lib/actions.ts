@@ -202,6 +202,27 @@ export async function deleteOrder(
   });
 }
 
+/**
+ * Quita un producto de un ticket ya cobrado, devolviendo sus insumos y
+ * rehaciendo las cuentas del ticket (subtotal, total y puntos).
+ *
+ * Como `deleteOrder`, existe para limpiar capturas de prueba, y por eso es sólo
+ * para administradores. No se permite si el renglón es el único del ticket: un
+ * ticket vacío no significa nada, y para eso está `deleteOrder`.
+ */
+export async function deleteOrderItem(
+  itemId: string,
+): Promise<ActionResult<undefined>> {
+  return run(requireAdmin, async (staff) => {
+    const { error } = await db().rpc("delete_order_item", {
+      p_item_id: reqId(itemId, "El renglón"),
+      p_staff_id: staff.id,
+    });
+    if (error) throw new Error(error.message);
+    return undefined;
+  });
+}
+
 /* --------------------------------- Inventario -------------------------------- */
 
 const MOVEMENT_REASONS: MovementReasonDb[] = [

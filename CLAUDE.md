@@ -55,6 +55,7 @@ Business rules live in Postgres functions, not TypeScript:
 | `create_order` | `…0002_rpc.sql`, redefined in `…0006_…` then `…0007_propina.sql` | Checkout: pricing, tip, stock, points, folio |
 | `cancel_order` | `…0003_cancel_order.sql` | Reverses stock and points; only before that day's cash close |
 | `delete_order` | `…0008_delete_order.sql` | Reverses effects then **deletes** the sale; admin-only, for clearing test data |
+| `delete_order_item` | `…0009_delete_order_item.sql` | Removes one line, returns its ingredients, recomputes the ticket |
 | `close_cash` | `…0002_rpc.sql`, redefined in `…0007_propina.sql` | Cash close, now also totalling tips |
 | `adjust_stock`, `adjust_points`, `business_day` | `…0002_rpc.sql` | Manual stock/point moves, operating-day calc |
 
@@ -79,6 +80,8 @@ Tip (`orders.tip`) is the one amount that originates on the client. It is valida
 Test records must be removable in a fixed order, because each link holds the next: **sale → product → ingredient**. A sale's `inventory_movements` pin the ingredient; a product's recipe pins it too. So `delete_order` removes the sale and its movements, `deleteProduct` cascades the recipe away, and only then is the ingredient unreferenced and deletable.
 
 `delete_order` reverses stock and points **before** deleting the row, and that order is mandatory: `inventory_movements.order_id` is `on delete set null`, so deleting first would erase the only record of how much to give back and silently corrupt stock. It skips the reversal for already-cancelled tickets, whose movements `cancel_order` already reversed — reversing twice would inflate stock. It refuses once that day's cash close exists.
+
+`delete_order_item` (surfaced in `/pedidos`, `components/modules/order-admin.tsx`) removes a single line. It cannot subtract that line's `inventory_movements` — those are aggregated per ingredient per order, not per line — so it recomputes the line's consumption from the recipe exactly as `create_order` did, honouring `service_mode` for packaging and the milk stored in the line's modifiers. It then recomputes subtotal/total/points and refuses to empty a ticket (use `delete_order`). Tip is preserved, only capped if consumption drops below it. This is why `OrderItem` carries `id`.
 
 `cancelOrder` and `deleteOrder` are not interchangeable: cancelling keeps the sale (it happened, and history must explain it) and is the right daily-operation tool; deleting destroys history and exists only for test cleanup. Both are `requireAdmin`.
 

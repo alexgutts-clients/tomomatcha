@@ -316,6 +316,11 @@ export type Database = {
         Args: { p_order_id: string; p_staff_id?: string | null };
         Returns: number;
       };
+      /** Quita un renglón y rehace las cuentas; devuelve el ticket afectado. */
+      delete_order_item: {
+        Args: { p_item_id: string; p_staff_id?: string | null };
+        Returns: string;
+      };
       close_cash: {
         Args: {
           p_counted: number;
