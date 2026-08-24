@@ -1,30 +1,26 @@
 "use client";
 
 import { useState } from "react";
+import { closeCash, reopenCash } from "@/lib/actions";
 import { useDerived, useStore } from "@/lib/store";
-import { money, shortDate, time, todayKey, weekday } from "@/lib/format";
-import { PAYMENT_META, PaymentMethod } from "@/lib/types";
+import { money, shortDate, time, weekday } from "@/lib/format";
+import { PAYMENT_META, type PaymentMethod } from "@/lib/types";
 import {
   AccessGate,
   Badge,
   Button,
   Card,
-  cx,
-  DemoTag,
+  ConfirmButton,
+  Field,
+  Input,
   PageHeader,
   Stat,
+  cx,
 } from "@/components/ui";
 
-function diffLabel(difference: number): string {
-  if (difference === 0) return "Exacto ✓";
-  return difference > 0
-    ? `+${money(difference)}`
-    : `−${money(Math.abs(difference))}`;
-}
-
 export function CashCloseModule() {
-  const { state, closeCash, reopenCash, notify } = useStore();
-  const { todayOrders, todaySales, cashClosedToday } = useDerived();
+  const { state, tz, currency, submit, busy } = useStore();
+  const { todayOrders, todaySales, cashClosedToday, todayClose } = useDerived();
 
   const [counted, setCounted] = useState("");
   const [notes, setNotes] = useState("");
@@ -45,14 +41,7 @@ export function CashCloseModule() {
   const expectedCash = byMethod.efectivo.total;
   const totalDay = todaySales;
 
-  const breakdown: {
-    id: string;
-    label: string;
-    short: string;
-    total: number;
-    count: number;
-    barClass: string;
-  }[] = mpOn
+  const breakdown = mpOn
     ? [
         {
           id: "efectivo",
@@ -86,7 +75,7 @@ export function CashCloseModule() {
         },
         {
           id: "tarjeta-otros",
-          label: "Tarjeta y otros (demo)",
+          label: "Tarjeta y otros",
           short: "Tarjeta y otros",
           total: byMethod.tarjeta.total + byMethod.mercadopago.total,
           count: byMethod.tarjeta.count + byMethod.mercadopago.count,
@@ -94,40 +83,49 @@ export function CashCloseModule() {
         },
       ];
 
-  const todayClose = state.cashCloses.find((c) => c.dateKey === todayKey());
-
   const parsed = counted.trim() === "" ? null : Number(counted);
   const valid = parsed !== null && Number.isFinite(parsed) && parsed >= 0;
   const difference = valid
     ? Math.round((parsed - expectedCash) * 100) / 100
     : 0;
 
-  const handleConfirm = () => {
+  const diffLabel = (value: number): string => {
+    if (value === 0) return "Exacto ✓";
+    return value > 0
+      ? `+${money(value, currency)}`
+      : `−${money(Math.abs(value), currency)}`;
+  };
+
+  const handleConfirm = async () => {
     if (!valid || parsed === null) return;
-    closeCash(parsed, notes.trim() || undefined);
-    notify(
-      "Corte registrado (demo)",
-      difference === 0
-        ? "La caja cuadró exacta. ¡Buen cierre!"
-        : difference > 0
-          ? `Sobraron ${money(difference)} en el cajón.`
-          : `Faltaron ${money(Math.abs(difference))} en el cajón.`,
+    const saved = await submit(
+      () => closeCash(parsed, notes.trim() || undefined),
+      {
+        title: "Corte registrado",
+        detail:
+          difference === 0
+            ? "La caja cuadró exacta."
+            : difference > 0
+              ? `Sobraron ${money(difference, currency)} en el cajón.`
+              : `Faltaron ${money(Math.abs(difference), currency)} en el cajón.`,
+      },
     );
-    setCounted("");
-    setNotes("");
+    if (saved !== null) {
+      setCounted("");
+      setNotes("");
+    }
   };
 
   const history = [...state.cashCloses]
     .sort((a, b) => b.dateKey.localeCompare(a.dateKey))
-    .slice(0, 10);
+    .slice(0, 12);
 
   return (
     <div className="space-y-6">
       <PageHeader
         eyebrow="Cierre del día · conciliación"
         title="Corte de caja"
-        desc="Al cerrar el turno se separa lo cobrado en efectivo de tarjeta y pagos digitales, y se concilia contra lo contado en el cajón. Todo es local y de demostración."
-        actions={<DemoTag />}
+        desc="Al cerrar el turno se separa lo cobrado en efectivo de tarjeta y pagos digitales, y se concilia contra lo contado en el cajón. Mientras el corte esté cerrado, el punto de venta no cobra."
       />
 
       <div
@@ -138,33 +136,36 @@ export function CashCloseModule() {
       >
         <Stat
           label="Venta total de hoy"
-          value={money(totalDay)}
+          value={money(totalDay, currency)}
           hint={`${todayOrders.length} ticket${todayOrders.length === 1 ? "" : "s"} del día`}
           tone="matcha"
         />
         <Stat
           label="Efectivo esperado"
-          value={money(expectedCash)}
+          value={money(expectedCash, currency)}
           hint={`${byMethod.efectivo.count} ticket${byMethod.efectivo.count === 1 ? "" : "s"} en efectivo`}
         />
         {mpOn ? (
           <>
             <Stat
-              label="Tarjeta (demo)"
-              value={money(byMethod.tarjeta.total)}
-              hint={`${byMethod.tarjeta.count} ticket${byMethod.tarjeta.count === 1 ? "" : "s"} · terminal simulada`}
+              label="Tarjeta"
+              value={money(byMethod.tarjeta.total, currency)}
+              hint={`${byMethod.tarjeta.count} ticket${byMethod.tarjeta.count === 1 ? "" : "s"}`}
             />
             <Stat
-              label="Mercado Pago (simulado)"
-              value={money(byMethod.mercadopago.total)}
-              hint={`${byMethod.mercadopago.count} ticket${byMethod.mercadopago.count === 1 ? "" : "s"} · QR de demo`}
+              label="Mercado Pago"
+              value={money(byMethod.mercadopago.total, currency)}
+              hint={`${byMethod.mercadopago.count} ticket${byMethod.mercadopago.count === 1 ? "" : "s"}`}
             />
           </>
         ) : (
           <Stat
             label="Tarjeta y otros"
-            value={money(byMethod.tarjeta.total + byMethod.mercadopago.total)}
-            hint="Pagos no en efectivo (demo)"
+            value={money(
+              byMethod.tarjeta.total + byMethod.mercadopago.total,
+              currency,
+            )}
+            hint="Pagos no en efectivo"
           />
         )}
       </div>
@@ -181,26 +182,26 @@ export function CashCloseModule() {
                 <Badge tone="ink">Turno cerrado</Badge>
               </div>
               <p className="mt-1 text-xs text-muted">
-                Cerró {todayClose.closedBy} a las {time(todayClose.closedAt)}
+                Cerró {todayClose.closedBy} a las {time(todayClose.closedAt, tz)}
               </p>
 
               <dl className="mt-4 divide-y divide-line">
                 <div className="flex items-center justify-between gap-3 py-2.5">
                   <dt className="text-sm font-bold text-ink">Efectivo esperado</dt>
                   <dd className="display text-lg text-ink">
-                    {money(todayClose.expectedCash)}
+                    {money(todayClose.expectedCash, currency)}
                   </dd>
                 </div>
                 <div className="flex items-center justify-between gap-3 py-2.5">
                   <dt className="text-sm font-bold text-ink">Efectivo contado</dt>
                   <dd className="display text-lg text-ink">
-                    {money(todayClose.countedCash)}
+                    {money(todayClose.countedCash, currency)}
                   </dd>
                 </div>
                 <div className="flex items-center justify-between gap-3 py-2.5">
-                  <dt className="text-sm font-bold text-ink">Tarjeta y otros (demo)</dt>
+                  <dt className="text-sm font-bold text-ink">Tarjeta y otros</dt>
                   <dd className="display text-lg text-ink">
-                    {money(todayClose.expectedCard)}
+                    {money(todayClose.expectedCard, currency)}
                   </dd>
                 </div>
                 <div className="flex items-center justify-between gap-3 py-2.5">
@@ -220,17 +221,23 @@ export function CashCloseModule() {
               ) : null}
 
               <div className="mt-5 border-t border-line pt-4">
-                <Button
+                <ConfirmButton
+                  label="Reabrir turno"
+                  confirmLabel="Sí, reabrir"
+                  question="Se borra el corte de hoy."
                   variant="ghost"
-                  onClick={() => {
-                    reopenCash();
-                    notify("Turno reabierto (demo)");
-                  }}
-                >
-                  Reabrir turno (demo)
-                </Button>
-                <p className="mt-2 text-xs text-muted">
-                  Al reabrir el turno se puede volver a cobrar en el punto de venta.
+                  size="md"
+                  disabled={busy}
+                  onConfirm={() =>
+                    void submit(() => reopenCash(), {
+                      title: "Turno reabierto",
+                      detail: "El punto de venta puede volver a cobrar.",
+                    })
+                  }
+                />
+                <p className="mt-2 text-xs leading-5 text-muted">
+                  Al reabrir se elimina el registro del corte y el punto de venta
+                  vuelve a cobrar. Cuando termines, hay que cerrar de nuevo.
                 </p>
               </div>
             </>
@@ -243,32 +250,36 @@ export function CashCloseModule() {
               <dl className="mt-4 divide-y divide-line">
                 <div className="flex items-center justify-between gap-3 py-2.5">
                   <dt className="text-sm font-bold text-ink">Efectivo esperado</dt>
-                  <dd className="display text-lg text-ink">{money(expectedCash)}</dd>
-                </div>
-                <div className="flex items-center justify-between gap-3 py-2.5">
-                  <dt className="text-sm font-bold text-ink">Fondo de caja</dt>
-                  <dd className="text-xs text-muted">
-                    {money(1000)} se quedan como fondo (informativo, demo)
+                  <dd className="display text-lg text-ink">
+                    {money(expectedCash, currency)}
                   </dd>
                 </div>
+                {state.settings.cashFloat > 0 ? (
+                  <div className="flex items-center justify-between gap-3 py-2.5">
+                    <dt className="text-sm font-bold text-ink">Fondo de caja</dt>
+                    <dd className="text-xs text-muted">
+                      {money(state.settings.cashFloat, currency)} se quedan como
+                      fondo
+                    </dd>
+                  </div>
+                ) : null}
               </dl>
 
-              <label className="mt-4 block">
-                <span className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-muted">
-                  Efectivo contado
-                </span>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  min={0}
-                  step="0.5"
-                  value={counted}
-                  onChange={(e) => setCounted(e.target.value)}
-                  aria-label="Efectivo contado"
-                  placeholder="0"
-                  className="focus-ring mt-1.5 w-full rounded-xl2 border border-line bg-paper px-4 py-3 text-lg font-bold text-ink placeholder:text-muted/60"
-                />
-              </label>
+              <div className="mt-4">
+                <Field label="Efectivo contado">
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    step="0.5"
+                    value={counted}
+                    onChange={(e) => setCounted(e.target.value)}
+                    aria-label="Efectivo contado"
+                    placeholder="0"
+                    className="py-3 text-lg"
+                  />
+                </Field>
+              </div>
 
               <div className="mt-3 min-h-[1.5rem]">
                 {!valid ? (
@@ -281,36 +292,37 @@ export function CashCloseModule() {
                   </p>
                 ) : difference > 0 ? (
                   <p className="text-sm font-bold text-amber">
-                    Sobran {money(difference)}
+                    Sobran {money(difference, currency)}
                   </p>
                 ) : (
                   <p className="text-sm font-bold text-amber">
-                    Faltan {money(Math.abs(difference))}
+                    Faltan {money(Math.abs(difference), currency)}
                   </p>
                 )}
               </div>
 
-              <input
+              <Input
                 type="text"
                 value={notes}
+                maxLength={400}
                 onChange={(e) => setNotes(e.target.value)}
                 aria-label="Notas del corte (opcional)"
                 placeholder="Notas del corte (opcional)"
-                className="focus-ring mt-3 w-full rounded-xl2 border border-line bg-paper px-4 py-2.5 text-sm text-ink placeholder:text-muted/60"
+                className="mt-3"
               />
 
               <Button
                 variant="matcha"
                 size="lg"
                 className="mt-4 w-full"
-                disabled={!valid}
-                onClick={handleConfirm}
+                disabled={!valid || busy}
+                onClick={() => void handleConfirm()}
               >
-                Confirmar corte del día
+                {busy ? "Guardando…" : "Confirmar corte del día"}
               </Button>
-              <p className="mt-2.5 text-xs text-muted">
+              <p className="mt-2.5 text-xs leading-5 text-muted">
                 Al cerrar el corte se pausa el cobro en el punto de venta hasta
-                reabrir el turno (demo).
+                reabrir el turno.
               </p>
             </>
           )}
@@ -332,13 +344,17 @@ export function CashCloseModule() {
                     aria-hidden
                   />
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-bold text-ink">{seg.label}</p>
+                    <p className="truncate text-sm font-bold text-ink">
+                      {seg.label}
+                    </p>
                     <p className="text-xs text-muted">
                       {seg.count} ticket{seg.count === 1 ? "" : "s"}
                     </p>
                   </div>
                 </div>
-                <p className="display shrink-0 text-lg text-ink">{money(seg.total)}</p>
+                <p className="display shrink-0 text-lg text-ink">
+                  {money(seg.total, currency)}
+                </p>
               </div>
             ))}
           </div>
@@ -381,9 +397,9 @@ export function CashCloseModule() {
                 desglose.
               </p>
             ) : (
-              <p className="mt-3 text-xs text-muted">
-                Los pagos con tarjeta y digitales son simulados; solo el efectivo se
-                concilia contra el cajón.
+              <p className="mt-3 text-xs leading-5 text-muted">
+                Sólo el efectivo se concilia contra el cajón; el resto se cruza con
+                los estados de cuenta de la terminal.
               </p>
             )}
           </div>
@@ -400,22 +416,23 @@ export function CashCloseModule() {
                 <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
                   <div className="min-w-0">
                     <p className="text-sm font-extrabold capitalize text-ink">
-                      {weekday(close.closedAt)} · {shortDate(close.closedAt)}
+                      {weekday(close.closedAt, tz)} ·{" "}
+                      {shortDate(close.closedAt, tz)}
                     </p>
                     <p className="mt-0.5 text-xs text-muted">
                       {close.orders} ticket{close.orders === 1 ? "" : "s"} · cerró{" "}
                       {close.closedBy}
                     </p>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
                     <p className="text-xs text-muted">
                       Esperado{" "}
                       <span className="font-extrabold text-ink">
-                        {money(close.expectedCash)}
+                        {money(close.expectedCash, currency)}
                       </span>{" "}
                       · Contado{" "}
                       <span className="font-extrabold text-ink">
-                        {money(close.countedCash)}
+                        {money(close.countedCash, currency)}
                       </span>
                     </p>
                     <Badge tone={close.difference === 0 ? "matcha" : "amber"}>
@@ -431,8 +448,8 @@ export function CashCloseModule() {
           </div>
         ) : (
           <p className="mt-3 text-sm text-muted">
-            Aún no hay cortes anteriores; el primero aparecerá aquí cuando cierres el
-            día.
+            Aún no hay cortes anteriores; el primero aparecerá aquí cuando cierres
+            el día.
           </p>
         )}
       </div>

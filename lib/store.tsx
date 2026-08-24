@@ -9,24 +9,31 @@ import {
   useRef,
   useState,
 } from "react";
-import { buildSeedState, STATE_VERSION } from "./seed";
-import { dayKey, todayKey } from "./format";
-import {
+import type { ActionResult } from "./action-utils";
+import { refreshState } from "./actions";
+import { attachMedia, requestUpload } from "./actions-admin";
+import { dayKey } from "./format";
+import type {
+  AppState,
   CashClose,
-  CheckoutPayload,
-  DemoState,
-  FeatureFlags,
-  ModifierSupport,
+  Ingredient,
   Order,
-  ORDER_FLOW,
-  OrderItem,
-  pointsFor,
-  Role,
+  Product,
 } from "./types";
 
-const STORAGE_KEY = "tomomatcha-demo";
+/* ============================================================================
+ * Estado de la aplicación en el navegador.
+ *
+ * El servidor es la única fuente de verdad: cada mutación devuelve el estado
+ * completo recién leído de la base y aquí sólo se reemplaza. No hay copias
+ * locales que se puedan desincronizar, lo que importa cuando hay dos cajas
+ * cobrando a la vez.
+ *
+ * Además se refresca solo cada pocos segundos mientras la pestaña está visible,
+ * para que el tablero de comandas de la barra vea lo que cobra la caja.
+ * ========================================================================== */
 
-/* --------------------------------- Toasts ----------------------------------- */
+const POLL_MS = 15_000;
 
 export interface Toast {
   id: number;
@@ -35,442 +42,222 @@ export interface Toast {
   tone: "ok" | "warn";
 }
 
-/* -------------------------------- Contexto ---------------------------------- */
+export interface SubmitOptions<T> {
+  /** Aviso al terminar bien. Con función, se arma a partir del resultado. */
+  title?: string | ((data: T) => string);
+  detail?: string | ((data: T) => string | undefined);
+  /** `true` para no mostrar aviso de éxito (cambios pequeños y evidentes). */
+  silent?: boolean;
+}
 
 interface StoreValue {
-  state: DemoState;
+  state: AppState;
+  /** Zona horaria del negocio: todo el formato de fechas la usa. */
+  tz: string;
+  currency: string;
+  /** Hay al menos una mutación en vuelo. */
+  busy: boolean;
   toasts: Toast[];
   notify: (title: string, detail?: string, tone?: Toast["tone"]) => void;
-  setRole: (role: Role) => void;
-  setFlag: (flag: keyof FeatureFlags, value: boolean) => void;
-  resetDemo: () => void;
-  checkout: (payload: CheckoutPayload) => Order | null;
-  moveOrder: (orderId: string, dir: 1 | -1) => void;
-  adjustStock: (ingredientId: string, delta: number) => void;
-  toggleProduct: (productId: string) => void;
-  setProductPrice: (productId: string, price: number) => void;
-  setProductMod: (productId: string, mod: keyof ModifierSupport, value: boolean) => void;
-  toggleMilk: (milkId: string) => void;
-  toggleExtra: (extraId: string) => void;
-  addPoints: (customerId: string, points: number, reason?: string) => void;
-  redeemReward: (customerId: string, cost: number, label: string) => void;
-  closeCash: (countedCash: number, notes?: string) => void;
-  reopenCash: () => void;
+  refresh: () => Promise<void>;
+  /** Ejecuta una server action, sincroniza el estado y avisa del resultado. */
+  submit: <T>(
+    action: () => Promise<ActionResult<T>>,
+    options?: SubmitOptions<T>,
+  ) => Promise<T | null>;
+  /** Sube un archivo a R2 y lo asocia a un producto o al logo. */
+  uploadMedia: (
+    file: File,
+    target: { purpose: "producto"; productId: string } | { purpose: "logo" },
+  ) => Promise<boolean>;
 }
 
 const StoreContext = createContext<StoreValue | null>(null);
 
-/* ------------------------------- Utilidades ---------------------------------- */
-
-function loadState(): DemoState {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as DemoState;
-      // Se conserva el estado solo si es de la misma versión y del mismo día:
-      // así la demo nunca abre con comandas de ayer "en preparación" y un día
-      // de ventas vacío.
-      if (
-        parsed &&
-        parsed.version === STATE_VERSION &&
-        parsed.seededAt &&
-        dayKey(parsed.seededAt) === todayKey()
-      ) {
-        return parsed;
-      }
-    }
-  } catch {
-    /* estado corrupto: se regenera la demo */
-  }
-  return buildSeedState();
-}
-
-/** Insumos consumidos por un renglón de pedido, según receta + leche + extras. */
-function consumptionFor(state: DemoState, item: OrderItem): Map<string, number> {
-  const usage = new Map<string, number>();
-  const product = state.products.find((p) => p.id === item.productId);
-  if (!product) return usage;
-
-  const add = (id: string, qty: number) => {
-    usage.set(id, (usage.get(id) ?? 0) + qty * item.qty);
-  };
-
-  for (const r of product.recipe) {
-    if (r.ingredientId === "milk") {
-      const milk = state.milks.find((m) => m.id === item.modifiers.milkId);
-      if (milk?.ingredientId) add(milk.ingredientId, r.qty);
-    } else {
-      add(r.ingredientId, r.qty);
-    }
-  }
-  for (const extraId of item.modifiers.extraIds) {
-    const extra = state.extras.find((e) => e.id === extraId);
-    extra?.recipe.forEach((r) => {
-      if (r.ingredientId !== "milk") add(r.ingredientId, r.qty);
-    });
-  }
-  return usage;
-}
-
-/* -------------------------------- Provider ----------------------------------- */
-
-export function StoreProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<DemoState | null>(null);
+export function StoreProvider({
+  initialState,
+  children,
+}: {
+  initialState: AppState;
+  children: React.ReactNode;
+}) {
+  const [state, setState] = useState<AppState>(initialState);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [pending, setPending] = useState(0);
   const toastId = useRef(0);
+  const pendingRef = useRef(0);
+  const loadedAt = useRef(initialState.loadedAt);
 
+  // El layout del servidor vuelve a renderizar tras `revalidatePath`; cuando
+  // llega un estado más nuevo, se adopta.
   useEffect(() => {
-    setState(loadState());
-  }, []);
-
-  useEffect(() => {
-    if (state) {
-      try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      } catch {
-        /* almacenamiento lleno o bloqueado: la demo sigue en memoria */
-      }
+    if (initialState.loadedAt > loadedAt.current) {
+      loadedAt.current = initialState.loadedAt;
+      setState(initialState);
     }
-  }, [state]);
+  }, [initialState]);
+
+  const adopt = useCallback((next: AppState) => {
+    loadedAt.current = next.loadedAt;
+    setState(next);
+  }, []);
 
   const notify = useCallback(
     (title: string, detail?: string, tone: Toast["tone"] = "ok") => {
       const id = ++toastId.current;
-      setToasts((t) => [...t.slice(-2), { id, title, detail, tone }]);
+      setToasts((list) => [...list.slice(-2), { id, title, detail, tone }]);
       window.setTimeout(() => {
-        setToasts((t) => t.filter((toast) => toast.id !== id));
-      }, 3800);
+        setToasts((list) => list.filter((toast) => toast.id !== id));
+      }, tone === "warn" ? 6000 : 3800);
     },
     [],
   );
 
-  const mutate = useCallback((fn: (s: DemoState) => DemoState) => {
-    setState((s) => (s ? fn(s) : s));
-  }, []);
+  const refresh = useCallback(async () => {
+    try {
+      const result = await refreshState();
+      if (result.ok) adopt(result.state);
+    } catch {
+      // Sin red: se reintenta en el siguiente ciclo, sin molestar al usuario.
+    }
+  }, [adopt]);
 
-  const setRole = useCallback(
-    (role: Role) => mutate((s) => ({ ...s, role })),
-    [mutate],
-  );
-
-  const setFlag = useCallback(
-    (flag: keyof FeatureFlags, value: boolean) =>
-      mutate((s) => ({ ...s, flags: { ...s.flags, [flag]: value } })),
-    [mutate],
-  );
-
-  const resetDemo = useCallback(() => {
-    const fresh = buildSeedState();
-    setState(fresh);
-    notify("Demo restablecida", "Todos los datos volvieron a su estado inicial.");
-  }, [notify]);
-
-  const checkout = useCallback(
-    (payload: CheckoutPayload): Order | null => {
-      let created: Order | null = null;
-      mutate((s) => {
-        if (!payload.lines.length) return s;
-
-        const items: OrderItem[] = payload.lines.map((line) => {
-          const product = s.products.find((p) => p.id === line.productId)!;
-          const milk = s.milks.find((m) => m.id === line.modifiers.milkId);
-          const extrasPrice = line.modifiers.extraIds.reduce(
-            (sum, id) => sum + (s.extras.find((e) => e.id === id)?.price ?? 0),
-            0,
-          );
-          return {
-            productId: product.id,
-            name: product.name,
-            emoji: product.emoji,
-            qty: line.qty,
-            unitPrice: product.price,
-            modsPrice: (milk?.surcharge ?? 0) + extrasPrice,
-            modifiers: { ...line.modifiers, extraIds: [...line.modifiers.extraIds] },
-          };
-        });
-
-        const subtotal = items.reduce(
-          (sum, it) => sum + (it.unitPrice + it.modsPrice) * it.qty,
-          0,
-        );
-        const total = Math.round(subtotal * (1 - payload.discountPct / 100));
-        const customer = s.customers.find((c) => c.id === payload.customerId);
-        const earned = customer && s.flags.lealtad ? pointsFor(total) : undefined;
-
-        const order: Order = {
-          id: `ord-${Date.now()}-${s.nextFolio}`,
-          folio: s.nextFolio,
-          items,
-          subtotal,
-          discountPct: payload.discountPct,
-          discountLabel: payload.discountLabel,
-          total,
-          payment: payload.payment,
-          status: "nuevo",
-          createdAt: new Date().toISOString(),
-          customerId: customer?.id,
-          customerName: customer?.name,
-          pointsEarned: earned,
-        };
-        created = order;
-
-        // Descuento de inventario por receta (leche elegida incluida)
-        const usage = new Map<string, number>();
-        for (const item of items) {
-          consumptionFor(s, item).forEach((qty, id) =>
-            usage.set(id, (usage.get(id) ?? 0) + qty),
-          );
+  const submit = useCallback(
+    async function submit<T>(
+      action: () => Promise<ActionResult<T>>,
+      options: SubmitOptions<T> = {},
+    ): Promise<T | null> {
+      pendingRef.current += 1;
+      setPending((n) => n + 1);
+      try {
+        const result = await action();
+        if (!result.ok) {
+          notify("No se pudo guardar", result.error, "warn");
+          return null;
         }
-        const ingredients = s.ingredients.map((ing) =>
-          usage.has(ing.id)
-            ? { ...ing, stock: Math.max(0, Math.round((ing.stock - usage.get(ing.id)!) * 100) / 100) }
-            : ing,
+        adopt(result.state);
+        if (!options.silent) {
+          const title =
+            typeof options.title === "function"
+              ? options.title(result.data)
+              : (options.title ?? "Listo");
+          const detail =
+            typeof options.detail === "function"
+              ? options.detail(result.data)
+              : options.detail;
+          notify(title, detail);
+        }
+        return result.data;
+      } catch (error) {
+        notify(
+          "Se perdió la conexión",
+          error instanceof Error ? error.message : undefined,
+          "warn",
         );
-
-        const customers = customer
-          ? s.customers.map((c) =>
-              c.id === customer.id
-                ? {
-                    ...c,
-                    points: c.points + (earned ?? 0),
-                    visits: c.visits + 1,
-                    lastVisit: order.createdAt,
-                  }
-                : c,
-            )
-          : s.customers;
-
-        return {
-          ...s,
-          orders: [...s.orders, order],
-          ingredients,
-          customers,
-          nextFolio: s.nextFolio + 1,
-        };
-      });
-      return created;
+        return null;
+      } finally {
+        pendingRef.current -= 1;
+        setPending((n) => Math.max(0, n - 1));
+      }
     },
-    [mutate],
+    [adopt, notify],
   );
 
-  const moveOrder = useCallback(
-    (orderId: string, dir: 1 | -1) =>
-      mutate((s) => ({
-        ...s,
-        orders: s.orders.map((o) => {
-          if (o.id !== orderId) return o;
-          const idx = ORDER_FLOW.indexOf(o.status);
-          const next = ORDER_FLOW[Math.min(Math.max(idx + dir, 0), ORDER_FLOW.length - 1)];
-          return {
-            ...o,
-            status: next,
-            deliveredAt:
-              next === "entregado"
-                ? new Date().toISOString()
-                : next !== o.status
-                  ? undefined
-                  : o.deliveredAt,
-          };
-        }),
-      })),
-    [mutate],
-  );
+  const uploadMedia = useCallback<StoreValue["uploadMedia"]>(
+    async (file, target) => {
+      const ticket = await submit(
+        () =>
+          requestUpload({
+            purpose: target.purpose,
+            contentType: file.type,
+            size: file.size,
+            name: file.name,
+          }),
+        { silent: true },
+      );
+      if (!ticket) return false;
 
-  const adjustStock = useCallback(
-    (ingredientId: string, delta: number) =>
-      mutate((s) => ({
-        ...s,
-        ingredients: s.ingredients.map((ing) =>
-          ing.id === ingredientId
-            ? { ...ing, stock: Math.max(0, Math.round((ing.stock + delta) * 100) / 100) }
-            : ing,
-        ),
-      })),
-    [mutate],
-  );
+      try {
+        const response = await fetch(ticket.uploadUrl, {
+          method: "PUT",
+          body: file,
+          headers: { "Content-Type": file.type },
+        });
+        if (!response.ok) {
+          notify(
+            "La subida fue rechazada",
+            `Cloudflare respondió ${response.status}. Si es un error de CORS, revisa la configuración del bucket en INSTRUCCIONES.md.`,
+            "warn",
+          );
+          return false;
+        }
+      } catch {
+        notify(
+          "No se pudo subir el archivo",
+          "El navegador no alcanzó el bucket de R2. Suele ser la configuración de CORS; está explicada en INSTRUCCIONES.md.",
+          "warn",
+        );
+        return false;
+      }
 
-  const toggleProduct = useCallback(
-    (productId: string) =>
-      mutate((s) => ({
-        ...s,
-        products: s.products.map((p) =>
-          p.id === productId ? { ...p, active: !p.active } : p,
-        ),
-      })),
-    [mutate],
-  );
-
-  const setProductPrice = useCallback(
-    (productId: string, price: number) =>
-      mutate((s) => ({
-        ...s,
-        products: s.products.map((p) =>
-          p.id === productId ? { ...p, price: Math.max(0, Math.round(price)) } : p,
-        ),
-      })),
-    [mutate],
-  );
-
-  const setProductMod = useCallback(
-    (productId: string, mod: keyof ModifierSupport, value: boolean) =>
-      mutate((s) => ({
-        ...s,
-        products: s.products.map((p) =>
-          p.id === productId ? { ...p, mods: { ...p.mods, [mod]: value } } : p,
-        ),
-      })),
-    [mutate],
-  );
-
-  const toggleMilk = useCallback(
-    (milkId: string) =>
-      mutate((s) => ({
-        ...s,
-        milks: s.milks.map((m) =>
-          m.id === milkId ? { ...m, available: !m.available } : m,
-        ),
-      })),
-    [mutate],
-  );
-
-  const toggleExtra = useCallback(
-    (extraId: string) =>
-      mutate((s) => ({
-        ...s,
-        extras: s.extras.map((e) =>
-          e.id === extraId ? { ...e, available: !e.available } : e,
-        ),
-      })),
-    [mutate],
-  );
-
-  const addPoints = useCallback(
-    (customerId: string, points: number, reason?: string) => {
-      mutate((s) => ({
-        ...s,
-        customers: s.customers.map((c) =>
-          c.id === customerId ? { ...c, points: c.points + points } : c,
-        ),
-      }));
-      if (reason) notify("Puntos actualizados", reason);
+      const attached = await submit(
+        () =>
+          attachMedia({
+            key: ticket.key,
+            purpose: target.purpose,
+            contentType: file.type,
+            size: file.size,
+            name: file.name,
+            productId: target.purpose === "producto" ? target.productId : undefined,
+          }),
+        { title: "Imagen actualizada" },
+      );
+      return attached !== null;
     },
-    [mutate, notify],
+    [notify, submit],
   );
 
-  const redeemReward = useCallback(
-    (customerId: string, cost: number, label: string) => {
-      mutate((s) => ({
-        ...s,
-        customers: s.customers.map((c) =>
-          c.id === customerId && c.points >= cost
-            ? { ...c, points: c.points - cost }
-            : c,
-        ),
-      }));
-      notify("Recompensa canjeada (demo)", label);
-    },
-    [mutate, notify],
-  );
+  /* ----------------------------- Refresco periódico ------------------------- */
 
-  const closeCash = useCallback(
-    (countedCash: number, notes?: string) =>
-      mutate((s) => {
-        const key = todayKey();
-        if (s.cashCloses.some((c) => c.dateKey === key)) return s;
-        const todays = s.orders.filter((o) => dayKey(o.createdAt) === key);
-        const expectedCash = todays
-          .filter((o) => o.payment === "efectivo")
-          .reduce((sum, o) => sum + o.total, 0);
-        const expectedCard = todays
-          .filter((o) => o.payment !== "efectivo")
-          .reduce((sum, o) => sum + o.total, 0);
-        const close: CashClose = {
-          id: `close-${key}-${Date.now()}`,
-          dateKey: key,
-          closedAt: new Date().toISOString(),
-          expectedCash,
-          expectedCard,
-          countedCash,
-          difference: Math.round((countedCash - expectedCash) * 100) / 100,
-          orders: todays.length,
-          notes: notes || undefined,
-          closedBy: s.role === "admin" ? "Administrador demo" : "Empleado demo",
-        };
-        return { ...s, cashCloses: [...s.cashCloses, close] };
-      }),
-    [mutate],
-  );
+  useEffect(() => {
+    let timer: number | undefined;
 
-  const reopenCash = useCallback(
-    () =>
-      mutate((s) => ({
-        ...s,
-        cashCloses: s.cashCloses.filter((c) => c.dateKey !== todayKey()),
-      })),
-    [mutate],
-  );
+    const tick = () => {
+      if (document.visibilityState === "visible" && pendingRef.current === 0) {
+        void refresh();
+      }
+      timer = window.setTimeout(tick, POLL_MS);
+    };
 
-  const value = useMemo<StoreValue | null>(() => {
-    if (!state) return null;
-    return {
+    timer = window.setTimeout(tick, POLL_MS);
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      if (timer) window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [refresh]);
+
+  const value = useMemo<StoreValue>(
+    () => ({
       state,
+      tz: state.settings.timezone,
+      currency: state.settings.currency,
+      busy: pending > 0,
       toasts,
       notify,
-      setRole,
-      setFlag,
-      resetDemo,
-      checkout,
-      moveOrder,
-      adjustStock,
-      toggleProduct,
-      setProductPrice,
-      setProductMod,
-      toggleMilk,
-      toggleExtra,
-      addPoints,
-      redeemReward,
-      closeCash,
-      reopenCash,
-    };
-  }, [
-    state,
-    toasts,
-    notify,
-    setRole,
-    setFlag,
-    resetDemo,
-    checkout,
-    moveOrder,
-    adjustStock,
-    toggleProduct,
-    setProductPrice,
-    setProductMod,
-    toggleMilk,
-    toggleExtra,
-    addPoints,
-    redeemReward,
-    closeCash,
-    reopenCash,
-  ]);
-
-  if (!value) return <Splash />;
+      refresh,
+      submit,
+      uploadMedia,
+    }),
+    [state, pending, toasts, notify, refresh, submit, uploadMedia],
+  );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
-}
-
-function Splash() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-paper">
-      <div className="text-center">
-        <p className="display text-4xl text-ink">
-          Tomo<span className="text-matcha-deep">Matcha</span>
-        </p>
-        <p className="mt-3 text-xs font-bold uppercase tracking-[0.25em] text-muted">
-          Preparando la demo…
-        </p>
-      </div>
-    </div>
-  );
 }
 
 export function useStore(): StoreValue {
@@ -481,47 +268,99 @@ export function useStore(): StoreValue {
 
 /* --------------------------- Selectores derivados ---------------------------- */
 
-export function useDerived() {
+export interface Derived {
+  todayKey: string;
+  todayOrders: Order[];
+  todaySales: number;
+  todayUnits: number;
+  activeOrders: Order[];
+  lowStock: Ingredient[];
+  cashClosedToday: boolean;
+  todayClose: CashClose | undefined;
+  topProducts: { product: Product; qty: number; revenue: number }[];
+  /** Ventas por día operativo de los últimos 7 días, del más viejo al más nuevo */
+  week: { key: string; total: number }[];
+}
+
+/** Los tickets cancelados no cuentan como venta en ningún cálculo. */
+export function isSale(order: Order): boolean {
+  return order.status !== "cancelado";
+}
+
+export function useDerived(): Derived {
   const { state } = useStore();
+
   return useMemo(() => {
-    const tKey = todayKey();
-    const todayOrders = state.orders.filter((o) => dayKey(o.createdAt) === tKey);
+    const tz = state.settings.timezone;
+    const today = state.todayKey;
+    const sales = state.orders.filter(isSale);
+
+    const todayOrders = sales.filter((o) => dayKey(o.createdAt, tz) === today);
     const todaySales = todayOrders.reduce((sum, o) => sum + o.total, 0);
     const todayUnits = todayOrders.reduce(
       (sum, o) => sum + o.items.reduce((n, it) => n + it.qty, 0),
       0,
     );
+
     const activeOrders = state.orders
-      .filter((o) => o.status !== "entregado")
+      .filter(
+        (o) =>
+          o.status === "nuevo" || o.status === "preparando" || o.status === "listo",
+      )
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-    const lowStock = state.ingredients.filter((i) => i.stock <= i.min);
-    const cashClosedToday = state.cashCloses.some((c) => c.dateKey === tKey);
+
+    const lowStock = state.ingredients.filter(
+      (i) => i.active && i.stock <= i.min,
+    );
+
+    const todayClose = state.cashCloses.find((c) => c.dateKey === today);
 
     const productCount = new Map<string, { qty: number; revenue: number }>();
-    for (const o of state.orders) {
-      for (const it of o.items) {
-        const acc = productCount.get(it.productId) ?? { qty: 0, revenue: 0 };
-        acc.qty += it.qty;
-        acc.revenue += (it.unitPrice + it.modsPrice) * it.qty;
-        productCount.set(it.productId, acc);
+    for (const order of sales) {
+      for (const item of order.items) {
+        if (!item.productId) continue;
+        const acc = productCount.get(item.productId) ?? { qty: 0, revenue: 0 };
+        acc.qty += item.qty;
+        acc.revenue += (item.unitPrice + item.modsPrice) * item.qty;
+        productCount.set(item.productId, acc);
       }
     }
     const topProducts = [...productCount.entries()]
-      .map(([productId, data]) => ({
-        product: state.products.find((p) => p.id === productId),
-        ...data,
-      }))
-      .filter((e) => e.product)
+      .flatMap(([productId, data]) => {
+        const product = state.products.find((p) => p.id === productId);
+        return product ? [{ product, ...data }] : [];
+      })
       .sort((a, b) => b.qty - a.qty);
 
+    // Las últimas 7 claves de día operativo, contadas hacia atrás desde hoy.
+    const weekKeys: string[] = [];
+    const [y, m, d] = today.split("-").map(Number);
+    const anchor = Date.UTC(y, (m ?? 1) - 1, d ?? 1);
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date(anchor - i * 86_400_000);
+      weekKeys.push(
+        `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(
+          date.getUTCDate(),
+        ).padStart(2, "0")}`,
+      );
+    }
+    const week = weekKeys.map((key) => ({ key, total: 0 }));
+    for (const order of sales) {
+      const slot = week.find((w) => w.key === dayKey(order.createdAt, tz));
+      if (slot) slot.total += order.total;
+    }
+
     return {
+      todayKey: today,
       todayOrders,
       todaySales,
       todayUnits,
       activeOrders,
       lowStock,
-      cashClosedToday,
+      cashClosedToday: !!todayClose,
+      todayClose,
       topProducts,
+      week,
     };
   }, [state]);
 }

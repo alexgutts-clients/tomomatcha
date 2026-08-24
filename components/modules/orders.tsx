@@ -1,23 +1,38 @@
 "use client";
 
 import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { cancelOrder, moveOrder } from "@/lib/actions";
 import { useDerived, useStore } from "@/lib/store";
-import { dayKey, minutesSince, money, time, todayKey } from "@/lib/format";
+import { dayKey, minutesSince, money, time } from "@/lib/format";
 import {
-  Order,
   ORDER_FLOW,
-  OrderStatus,
   PAYMENT_META,
+  SERVICE_META,
   STATUS_META,
+  type Order,
+  type OrderStatus,
 } from "@/lib/types";
 import { Icons } from "@/components/icons";
-import { Badge, Button, Card, EmptyState, PageHeader } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  ConfirmButton,
+  EmptyState,
+  PageHeader,
+  cx,
+} from "@/components/ui";
 
-const COLUMN_TONE: Record<OrderStatus, "neutral" | "matcha" | "amber" | "ink"> = {
+const COLUMN_TONE: Record<
+  OrderStatus,
+  "neutral" | "matcha" | "amber" | "ink" | "danger"
+> = {
   nuevo: "amber",
   preparando: "matcha",
   listo: "ink",
   entregado: "neutral",
+  cancelado: "danger",
 };
 
 const EMPTY_COPY: Record<OrderStatus, string> = {
@@ -25,32 +40,62 @@ const EMPTY_COPY: Record<OrderStatus, string> = {
   preparando: "Sin pedidos en preparación.",
   listo: "Sin pedidos listos por entregar.",
   entregado: "Aún no hay entregas hoy.",
+  cancelado: "Sin cancelaciones.",
 };
 
 const DELIVERED_CAP = 6;
 
+/**
+ * Minutos de espera a partir de los cuales la comanda se marca. El cliente
+ * pidió que el pedido que se está tardando salte a la vista en rojo.
+ */
+const WAIT_WARN_MIN = 6;
+const WAIT_LATE_MIN = 10;
+
 /* ------------------------------ Tarjeta de pedido ----------------------------- */
 
 function OrderCard({ order }: { order: Order }) {
-  const { state, moveOrder } = useStore();
+  const { state, tz, currency, submit, busy } = useStore();
   const delivered = order.status === "entregado";
   const waited = minutesSince(order.createdAt);
+  const isAdmin = state.role === "admin";
+
+  const late = !delivered && order.status !== "cancelado" && waited >= WAIT_LATE_MIN;
 
   return (
-    <Card className="animate-rise">
+    <Card className={cx("animate-rise", late && "border-danger/50 bg-danger/5")}>
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-extrabold text-ink">
           #{order.folio}
-          <span className="ml-2 text-xs font-bold text-muted">{time(order.createdAt)}</span>
+          <span className="ml-2 text-xs font-bold text-muted">
+            {time(order.createdAt, tz)}
+          </span>
         </p>
         {delivered ? (
           order.deliveredAt ? (
-            <Badge tone="neutral">✔ {time(order.deliveredAt)}</Badge>
+            <Badge tone="neutral">✔ {time(order.deliveredAt, tz)}</Badge>
           ) : null
         ) : (
-          <Badge tone={waited >= 10 ? "amber" : "neutral"}>hace {waited} min</Badge>
+          <Badge
+            tone={
+              waited >= WAIT_LATE_MIN
+                ? "danger"
+                : waited >= WAIT_WARN_MIN
+                  ? "amber"
+                  : "neutral"
+            }
+          >
+            hace {waited} min
+          </Badge>
         )}
       </div>
+
+      <p className="mt-1.5">
+        <Badge tone={order.serviceMode === "llevar" ? "ink" : "matcha"}>
+          {SERVICE_META[order.serviceMode].emoji}{" "}
+          {SERVICE_META[order.serviceMode].label}
+        </Badge>
+      </p>
 
       {order.customerName ? (
         <p className="mt-1 text-xs text-muted">
@@ -59,33 +104,37 @@ function OrderCard({ order }: { order: Order }) {
       ) : null}
 
       <div className="mt-3 space-y-2.5">
-        {order.items.map((it, idx) => {
+        {order.items.map((item, idx) => {
           const details: string[] = [];
-          const milk = it.modifiers.milkId
-            ? state.milks.find((m) => m.id === it.modifiers.milkId)
-            : undefined;
-          if (milk) details.push(milk.name);
-          if (it.modifiers.sweetness !== undefined) {
-            details.push(`${it.modifiers.sweetness}% dulzor`);
+          if (item.modifiers.milkName) details.push(item.modifiers.milkName);
+          if (item.modifiers.sweetness !== undefined) {
+            details.push(
+              item.modifiers.sweetness === 0
+                ? "Sin azúcar"
+                : `${item.modifiers.sweetness}% dulzor`,
+            );
           }
-          if (it.modifiers.temperature) {
-            details.push(it.modifiers.temperature === "caliente" ? "Caliente" : "Frío");
+          if (item.modifiers.temperature) {
+            details.push(
+              item.modifiers.temperature === "caliente" ? "Caliente" : "Frío",
+            );
           }
-          for (const extraId of it.modifiers.extraIds) {
-            const extra = state.extras.find((e) => e.id === extraId);
-            if (extra) details.push(extra.name);
+          for (const extra of item.modifiers.extras ?? []) {
+            details.push(extra.name);
           }
           return (
             <div key={idx}>
               <p className="text-sm font-bold text-ink">
-                {it.qty}× <span aria-hidden>{it.emoji}</span> {it.name}
+                {item.qty}× <span aria-hidden>{item.emoji}</span> {item.name}
               </p>
               {details.length ? (
-                <p className="mt-0.5 text-xs leading-5 text-muted">{details.join(" · ")}</p>
+                <p className="mt-0.5 text-xs leading-5 text-muted">
+                  {details.join(" · ")}
+                </p>
               ) : null}
-              {it.modifiers.notes ? (
+              {item.modifiers.notes ? (
                 <p className="mt-0.5 text-xs italic leading-5 text-muted">
-                  <span aria-hidden>📝</span> {it.modifiers.notes}
+                  <span aria-hidden>📝</span> {item.modifiers.notes}
                 </p>
               ) : null}
             </div>
@@ -94,7 +143,9 @@ function OrderCard({ order }: { order: Order }) {
       </div>
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
-        <p className="text-sm font-extrabold text-ink">{money(order.total)}</p>
+        <p className="text-sm font-extrabold text-ink">
+          {money(order.total, currency)}
+        </p>
         <div className="flex items-center gap-2">
           <Badge tone="neutral">{PAYMENT_META[order.payment].short}</Badge>
           {order.pointsEarned ? (
@@ -105,14 +156,17 @@ function OrderCard({ order }: { order: Order }) {
         </div>
       </div>
 
-      {!delivered ? (
+      {order.status !== "entregado" && order.status !== "cancelado" ? (
         <div className="mt-3 flex items-center gap-2">
           {order.status !== "nuevo" ? (
             <Button
               variant="ghost"
               size="sm"
+              disabled={busy}
               aria-label="Regresar estado"
-              onClick={() => moveOrder(order.id, -1)}
+              onClick={() =>
+                void submit(() => moveOrder(order.id, -1), { silent: true })
+              }
             >
               ←
             </Button>
@@ -121,10 +175,30 @@ function OrderCard({ order }: { order: Order }) {
             variant="matcha"
             size="sm"
             className="flex-1"
-            onClick={() => moveOrder(order.id, 1)}
+            disabled={busy}
+            onClick={() =>
+              void submit(() => moveOrder(order.id, 1), { silent: true })
+            }
           >
             {STATUS_META[order.status].action}
           </Button>
+        </div>
+      ) : null}
+
+      {isAdmin && order.status !== "cancelado" ? (
+        <div className="mt-2.5 border-t border-line pt-2.5">
+          <ConfirmButton
+            label="Cancelar ticket"
+            confirmLabel="Sí, cancelar"
+            question="Se devuelven insumos y puntos."
+            disabled={busy}
+            onConfirm={() =>
+              void submit(() => cancelOrder(order.id), {
+                title: `Ticket #${order.folio} cancelado`,
+                detail: "Se devolvieron los insumos y los puntos.",
+              })
+            }
+          />
         </div>
       ) : null}
     </Card>
@@ -134,11 +208,37 @@ function OrderCard({ order }: { order: Order }) {
 /* --------------------------------- Módulo ------------------------------------ */
 
 export function OrdersModule() {
-  const { state } = useStore();
-  const { activeOrders } = useDerived();
+  const { state, tz } = useStore();
+  const { activeOrders, todayKey } = useDerived();
+  const [showCancelled, setShowCancelled] = useState(false);
+  const boardRef = useRef<HTMLDivElement>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+
+  // Modo barra: el tablero ocupa toda la pantalla del iPad, sin menús alrededor.
+  useEffect(() => {
+    const onChange = () => setFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => undefined);
+    } else {
+      void boardRef.current?.requestFullscreen().catch(() => undefined);
+    }
+  }, []);
 
   const deliveredToday = state.orders
-    .filter((o) => o.status === "entregado" && dayKey(o.createdAt) === todayKey())
+    .filter(
+      (o) => o.status === "entregado" && dayKey(o.createdAt, tz) === todayKey,
+    )
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  const cancelledToday = state.orders
+    .filter(
+      (o) => o.status === "cancelado" && dayKey(o.createdAt, tz) === todayKey,
+    )
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   const columns = ORDER_FLOW.map((status) => {
@@ -161,14 +261,19 @@ export function OrdersModule() {
       <PageHeader
         eyebrow="Barra · flujo de pedidos"
         title="Comandas"
-        desc="Cada pedido avanza por cuatro estados: nuevo, en preparación, listo y entregado. Usa el botón de cada tarjeta para moverlo de columna; todo es local y de demostración."
+        desc="Cada pedido avanza por cuatro estados: nuevo, en preparación, listo y entregado. El tablero se actualiza solo cada pocos segundos."
         actions={
-          <Link
-            href="/pos"
-            className="focus-ring inline-flex items-center gap-2 rounded-full border border-line bg-white px-5 py-2.5 text-sm font-bold text-ink transition hover:border-matcha hover:text-matcha-deep"
-          >
-            + Nueva venta
-          </Link>
+          <>
+            <Button variant="ghost" onClick={toggleFullscreen}>
+              {fullscreen ? "Salir de pantalla completa" : "Pantalla completa"}
+            </Button>
+            <Link
+              href="/pos"
+              className="focus-ring inline-flex items-center gap-2 rounded-full border border-line bg-white px-5 py-2.5 text-sm font-bold text-ink transition hover:border-matcha hover:text-matcha-deep"
+            >
+              + Nueva venta
+            </Link>
+          </>
         }
       />
 
@@ -176,7 +281,7 @@ export function OrdersModule() {
         <EmptyState
           emoji="🔔"
           title="La barra está al día"
-          desc="No hay pedidos activos en este momento. Crea una venta en el punto de venta y su comanda aparecerá aquí al instante."
+          desc="No hay pedidos activos en este momento. Al cobrar en el punto de venta, la comanda aparece aquí al instante."
           action={
             <Link
               href="/pos"
@@ -189,7 +294,13 @@ export function OrdersModule() {
         />
       ) : null}
 
-      <div className="scrollbar-slim flex snap-x gap-4 overflow-x-auto pb-4 xl:grid xl:grid-cols-4 xl:overflow-visible xl:pb-0">
+      <div
+        ref={boardRef}
+        className={cx(
+          "scrollbar-slim flex snap-x gap-4 overflow-x-auto pb-4 xl:grid xl:grid-cols-4 xl:overflow-visible xl:pb-0",
+          fullscreen && "overflow-y-auto bg-paper p-6",
+        )}
+      >
         {columns.map((col) => (
           <section
             key={col.status}
@@ -220,6 +331,42 @@ export function OrdersModule() {
           </section>
         ))}
       </div>
+
+      {cancelledToday.length ? (
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowCancelled((v) => !v)}
+            aria-expanded={showCancelled}
+            className="focus-ring inline-flex items-center gap-2 rounded-full text-xs font-extrabold text-muted hover:text-ink"
+          >
+            {cancelledToday.length} ticket
+            {cancelledToday.length === 1 ? "" : "s"} cancelado
+            {cancelledToday.length === 1 ? "" : "s"} hoy
+            <span aria-hidden>{showCancelled ? "▴" : "▾"}</span>
+          </button>
+          {showCancelled ? (
+            <ul className="mt-3 space-y-2">
+              {cancelledToday.map((order) => (
+                <li
+                  key={order.id}
+                  className="card flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm"
+                >
+                  <span className="font-bold text-ink">
+                    #{order.folio}
+                    <span className="ml-2 text-xs font-normal text-muted">
+                      {time(order.createdAt, tz)}
+                    </span>
+                  </span>
+                  <span className="text-xs text-muted line-through">
+                    {money(order.total, state.settings.currency)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -2,9 +2,16 @@
 
 import { useState } from "react";
 import { useDerived, useStore } from "@/lib/store";
-import { dayKey, money, todayKey, weekday } from "@/lib/format";
-import { PAYMENT_META, PaymentMethod } from "@/lib/types";
-import { AccessGate, Card, cx, DemoTag, PageHeader, Stat } from "@/components/ui";
+import { dayKey, money, weekday } from "@/lib/format";
+import { PAYMENT_META, type PaymentMethod } from "@/lib/types";
+import {
+  AccessGate,
+  Card,
+  EmptyState,
+  PageHeader,
+  Stat,
+  cx,
+} from "@/components/ui";
 
 type RangeId = "hoy" | "7d";
 
@@ -22,25 +29,19 @@ const PAYMENT_COLORS: Record<PaymentMethod, string> = {
 const PAYMENT_ORDER: PaymentMethod[] = ["efectivo", "tarjeta", "mercadopago"];
 
 export function ReportsModule() {
-  const { state } = useStore();
-  const { topProducts } = useDerived();
+  const { state, tz, currency } = useStore();
+  const { topProducts, todayKey, week } = useDerived();
   const [range, setRange] = useState<RangeId>("7d");
 
   if (state.role === "empleado") return <AccessGate module="Reportes" />;
 
-  const tKey = todayKey();
-  // Ventana de 7 días: la misma que grafica "Ventas por día", para que los
-  // totales de arriba siempre cuadren con las barras de abajo.
-  const weekKeys = new Set<string>();
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    weekKeys.add(dayKey(d.toISOString()));
-  }
+  const sales = state.orders.filter((o) => o.status !== "cancelado");
+  const weekKeys = new Set(week.map((d) => d.key));
+
   const filtered =
     range === "hoy"
-      ? state.orders.filter((o) => dayKey(o.createdAt) === tKey)
-      : state.orders.filter((o) => weekKeys.has(dayKey(o.createdAt)));
+      ? sales.filter((o) => dayKey(o.createdAt, tz) === todayKey)
+      : sales.filter((o) => weekKeys.has(dayKey(o.createdAt, tz)));
   const rangeText = range === "hoy" ? "hoy" : "últimos 7 días";
 
   const ingresos = filtered.reduce((sum, o) => sum + o.total, 0);
@@ -51,30 +52,11 @@ export function ReportsModule() {
     0,
   );
 
-  // Ventas por día: la gráfica siempre muestra la última semana completa
-  const days: { key: string; label: string; total: number }[] = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const iso = d.toISOString();
-    days.push({ key: dayKey(iso), label: weekday(iso), total: 0 });
-  }
+  const maxDay = Math.max(...week.map((d) => d.total), 1);
 
-  for (const o of state.orders) {
-    const slot = days.find((d) => d.key === dayKey(o.createdAt));
-    if (slot) slot.total += o.total;
-  }
-  const maxDay = Math.max(...days.map((d) => d.total), 1);
-
-  // Top productos (histórico de la demo, vía selector derivado)
-  const top = topProducts
-    .slice(0, 8)
-    .flatMap((e) =>
-      e.product ? [{ product: e.product, qty: e.qty, revenue: e.revenue }] : [],
-    );
+  const top = topProducts.slice(0, 8);
   const topMax = Math.max(top[0]?.qty ?? 1, 1);
 
-  // Métodos de pago del rango filtrado
   const byPayment = PAYMENT_ORDER.map((method) => {
     const amount = filtered
       .filter((o) => o.payment === method)
@@ -94,22 +76,44 @@ export function ReportsModule() {
       return { ...s, offset };
     });
 
-  // Horas pico: 11 franjas de 8:00 a 18:00
+  // Horas pico: franjas de 7:00 a 22:00 en la zona horaria del negocio.
   const hourSlots: { hour: number; count: number }[] = [];
-  for (let h = 8; h <= 18; h++) hourSlots.push({ hour: h, count: 0 });
+  for (let h = 7; h <= 22; h++) hourSlots.push({ hour: h, count: 0 });
+  const hourFormatter = new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    hour12: false,
+    timeZone: tz,
+  });
   for (const o of filtered) {
-    const h = new Date(o.createdAt).getHours();
+    const h = Number(hourFormatter.format(new Date(o.createdAt)).slice(0, 2));
     const slot = hourSlots.find((s) => s.hour === h);
     if (slot) slot.count += 1;
   }
   const maxHourCount = Math.max(...hourSlots.map((s) => s.count));
 
+  if (!sales.length) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow="Números del negocio"
+          title="Reportes"
+          desc="Ingresos, productos y métodos de pago, calculados con las ventas registradas."
+        />
+        <EmptyState
+          emoji="📈"
+          title="Aún no hay ventas para reportar"
+          desc="En cuanto empieces a cobrar en el punto de venta, aquí verás ingresos, productos más vendidos, métodos de pago y horas pico."
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Números claros · datos de ejemplo"
+        eyebrow="Números del negocio"
         title="Reportes"
-        desc="Ingresos, productos y métodos de pago calculados al momento con las ventas de la demo."
+        desc="Ingresos, productos y métodos de pago, calculados al momento con las ventas registradas."
         actions={
           <div className="flex items-center gap-2">
             {RANGES.map((r) => (
@@ -134,9 +138,18 @@ export function ReportsModule() {
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Ingresos" value={money(ingresos)} hint={rangeText} tone="matcha" />
+        <Stat
+          label="Ingresos"
+          value={money(ingresos, currency)}
+          hint={rangeText}
+          tone="matcha"
+        />
         <Stat label="Tickets" value={tickets} hint="Pedidos cobrados" />
-        <Stat label="Ticket promedio" value={money(ticketPromedio)} hint="Por pedido" />
+        <Stat
+          label="Ticket promedio"
+          value={money(ticketPromedio, currency)}
+          hint="Por pedido"
+        />
         <Stat label="Piezas" value={piezas} hint="Bebidas y bakery" />
       </div>
 
@@ -147,7 +160,7 @@ export function ReportsModule() {
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <p className="eyebrow">Ventas por día · últimos 7 días</p>
               <p className="text-[10px] font-bold text-muted">
-                La gráfica siempre muestra la última semana
+                Zona horaria: {tz}
               </p>
             </div>
             <div
@@ -155,21 +168,23 @@ export function ReportsModule() {
               role="img"
               aria-label="Gráfica de barras con las ventas de cada uno de los últimos 7 días"
             >
-              {days.map((d) => (
+              {week.map((d) => (
                 <div
                   key={d.key}
                   className="flex h-full flex-1 flex-col items-center justify-end gap-1.5"
                 >
-                  <span className="text-[10px] font-bold text-muted">{money(d.total)}</span>
+                  <span className="text-[10px] font-bold text-muted">
+                    {money(d.total, currency)}
+                  </span>
                   <div
                     className={cx(
                       "w-full rounded-t-lg transition-all",
-                      d.key === tKey ? "bg-matcha-deep" : "bg-matcha-light",
+                      d.key === todayKey ? "bg-matcha-deep" : "bg-matcha-light",
                     )}
                     style={{ height: `${Math.max((d.total / maxDay) * 100, 4)}%` }}
                   />
                   <span className="text-[10px] font-extrabold uppercase text-muted">
-                    {d.label}
+                    {weekday(`${d.key}T12:00:00`, tz)}
                   </span>
                 </div>
               ))}
@@ -178,7 +193,7 @@ export function ReportsModule() {
 
           {/* ---------------------------- Top productos ----------------------------- */}
           <Card>
-            <p className="eyebrow">Top productos · histórico de la demo</p>
+            <p className="eyebrow">Top productos · histórico cargado</p>
             <div className="mt-4 space-y-3">
               {top.map((entry, i) => (
                 <div key={entry.product.id} className="flex items-center gap-3">
@@ -194,7 +209,7 @@ export function ReportsModule() {
                         {entry.product.name}
                       </p>
                       <p className="shrink-0 text-xs font-extrabold text-muted">
-                        {entry.qty} uds · {money(entry.revenue)}
+                        {entry.qty} uds · {money(entry.revenue, currency)}
                       </p>
                     </div>
                     <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-cream">
@@ -208,7 +223,7 @@ export function ReportsModule() {
               ))}
               {!top.length ? (
                 <p className="rounded-xl2 border border-dashed border-line px-4 py-8 text-center text-sm text-muted">
-                  Todavía no hay ventas registradas en la demo.
+                  Todavía no hay productos vendidos.
                 </p>
               ) : null}
             </div>
@@ -226,7 +241,7 @@ export function ReportsModule() {
                     viewBox="0 0 42 42"
                     className="w-full"
                     role="img"
-                    aria-label={`Distribución de ingresos por método de pago, total ${money(ingresos)}`}
+                    aria-label={`Distribución de ingresos por método de pago, total ${money(ingresos, currency)}`}
                   >
                     <circle
                       cx="21"
@@ -251,7 +266,9 @@ export function ReportsModule() {
                     ))}
                   </svg>
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <p className="display text-lg text-ink">{money(ingresos)}</p>
+                    <p className="display text-lg text-ink">
+                      {money(ingresos, currency)}
+                    </p>
                     <p className="text-[9px] font-extrabold uppercase tracking-[0.14em] text-muted">
                       Total
                     </p>
@@ -272,7 +289,7 @@ export function ReportsModule() {
                         {Math.round(s.pct)}%
                       </span>
                       <span className="w-20 shrink-0 text-right text-xs font-extrabold text-ink">
-                        {money(s.amount)}
+                        {money(s.amount, currency)}
                       </span>
                     </li>
                   ))}
@@ -280,7 +297,7 @@ export function ReportsModule() {
               </>
             ) : (
               <p className="mt-4 rounded-xl2 border border-dashed border-line px-4 py-8 text-center text-sm text-muted">
-                Sin ventas en este rango todavía. Cobra algo en el punto de venta y aquí
+                Sin ventas en este rango. Cobra algo en el punto de venta y aquí
                 verás cómo pagaron.
               </p>
             )}
@@ -292,7 +309,7 @@ export function ReportsModule() {
             <div
               className="mt-4 flex h-20 items-end gap-1"
               role="img"
-              aria-label={`Pedidos por hora entre las 8:00 y las 18:00, ${rangeText}`}
+              aria-label={`Pedidos por hora entre las 7:00 y las 22:00, ${rangeText}`}
             >
               {hourSlots.map((s) => (
                 <div
@@ -315,18 +332,18 @@ export function ReportsModule() {
                   key={s.hour}
                   className="flex-1 text-center text-[9px] font-bold text-muted"
                 >
-                  {(s.hour - 8) % 2 === 0 ? `${s.hour}:00` : ""}
+                  {(s.hour - 7) % 3 === 0 ? `${s.hour}` : ""}
                 </span>
               ))}
             </div>
           </Card>
 
-          {/* --------------------------------- Nota --------------------------------- */}
-          <Card className="flex items-start gap-3">
-            <DemoTag />
-            <p className="text-xs leading-5 text-muted">
-              Los reportes se calculan al momento con las ventas de la demo. En
-              producción se conectarían a la base de datos real.
+          <Card>
+            <p className="eyebrow">Alcance de los reportes</p>
+            <p className="mt-2 text-xs leading-5 text-muted">
+              El panel trabaja con las ventas de los últimos días para mantenerse
+              rápido. Para el histórico completo, las ventas viven en la base de
+              datos y se pueden consultar desde Supabase.
             </p>
           </Card>
         </div>
