@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useDerived, useStore } from "@/lib/store";
 import { money, shortDate, time, weekday } from "@/lib/format";
 import { STATUS_META, daysUntil, expiryLevel } from "@/lib/types";
+import { SHOW_LEALTAD_UI } from "@/lib/feature-visibility";
 import { Icons } from "@/components/icons";
 import {
   AccessGate,
@@ -119,13 +120,13 @@ export function DashboardModule() {
             hint={lowStock.length ? "Revisar inventario" : "Todo abastecido"}
             tone={lowStock.length ? "amber" : "neutral"}
           />
-        ) : (
+        ) : SHOW_LEALTAD_UI ? (
           <Stat
             label="Clientes registrados"
             value={state.customers.length}
             hint="Programa de lealtad"
           />
-        )}
+        ) : null}
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[1.4fr_1fr]">
@@ -246,6 +247,11 @@ export function DashboardModule() {
                       <div className="flex items-baseline justify-between gap-2">
                         <p className="truncate text-sm font-bold text-ink">
                           {entry.product.name}
+                          {entry.deleted ? (
+                            <span className="ml-1.5 text-[10px] font-bold text-muted">
+                              (fuera del menú)
+                            </span>
+                          ) : null}
                         </p>
                         <p className="shrink-0 text-xs font-extrabold text-muted">
                           {entry.qty} uds
@@ -375,14 +381,16 @@ export function DashboardModule() {
                   <p className="mt-3 text-sm leading-6 text-paper/80">
                     {state.settings.googleReviewsCount
                       ? `${state.settings.googleReviewsCount.toLocaleString("es-MX")} reseñas registradas.`
-                      : "Pide reseñas en barra con el QR del módulo de clientes."}
+                      : "Pide reseñas en barra con el enlace de tu negocio."}
                   </p>
-                  <Link
-                    href="/clientes"
-                    className="focus-ring mt-4 inline-block rounded-full border border-paper/25 px-4 py-2 text-xs font-extrabold text-paper hover:border-matcha-light"
-                  >
-                    Ver el QR de reseñas
-                  </Link>
+                  {SHOW_LEALTAD_UI ? (
+                    <Link
+                      href="/clientes"
+                      className="focus-ring mt-4 inline-block rounded-full border border-paper/25 px-4 py-2 text-xs font-extrabold text-paper hover:border-matcha-light"
+                    >
+                      Ver el QR de reseñas
+                    </Link>
+                  ) : null}
                 </>
               ) : (
                 <p className="mt-3 text-sm leading-6 text-paper/70">

@@ -5,6 +5,7 @@ import { useMemo, useRef, useState, type ReactNode } from "react";
 import { checkout } from "@/lib/actions";
 import { useDerived, useStore } from "@/lib/store";
 import { money } from "@/lib/format";
+import { SHOW_LEALTAD_UI } from "@/lib/feature-visibility";
 import {
   CATEGORY_IDS,
   CATEGORY_META,
@@ -38,6 +39,10 @@ const PROMOS: { pct: number; label: string }[] = [
   { pct: 10, label: "Descuento 10%" },
   { pct: 15, label: "Cliente frecuente 15%" },
 ];
+
+// Porcentajes sugeridos de propina. El 0 es explícito y va primero: dejar
+// propina tiene que ser una elección, no algo que se cuela por omisión.
+const TIP_PCTS = [0, 10, 15, 20];
 
 const TEMP_LABEL: Record<Temperature, string> = {
   caliente: "Caliente",
@@ -108,6 +113,10 @@ export function PosModule() {
   // descuenta empaque de más y no de menos, que es el error menos costoso.
   const [serviceMode, setServiceMode] = useState<ServiceMode>("llevar");
   const [cashReceived, setCashReceived] = useState("");
+  // Propina: o un porcentaje sugerido, o un importe escrito a mano. Nunca las
+  // dos cosas, para que la caja no tenga que adivinar cuál gana.
+  const [tipPct, setTipPct] = useState(0);
+  const [tipCustom, setTipCustom] = useState("");
   const [mobileTicketOpen, setMobileTicketOpen] = useState(false);
   const [success, setSuccess] = useState<{ folio: number; total: number } | null>(
     null,
@@ -168,8 +177,21 @@ export function PosModule() {
   };
 
   const subtotal = cart.reduce((sum, l) => sum + lineUnitPrice(l) * l.qty, 0);
-  const total = Math.round(subtotal * (1 - discountPct / 100) * 100) / 100;
-  const discountAmount = Math.round((subtotal - total) * 100) / 100;
+  // Lo que se cobra por el consumo, ya con descuento. La propina se calcula
+  // sobre esto y se suma después: una promoción no le recorta al equipo lo que
+  // el cliente quiso dejarle.
+  const consumo = Math.round(subtotal * (1 - discountPct / 100) * 100) / 100;
+  const discountAmount = Math.round((subtotal - consumo) * 100) / 100;
+
+  const tipTyped = tipCustom.trim() !== "";
+  const rawTip = tipTyped
+    ? Number(tipCustom) || 0
+    : (consumo * tipPct) / 100;
+  // Tope en el consumo: una propina mayor que la cuenta es siempre un dedazo.
+  const tip = Math.round(Math.max(0, Math.min(rawTip, consumo)) * 100) / 100;
+  const tipOverflow = tipTyped && Number(tipCustom) > consumo;
+
+  const total = Math.round((consumo + tip) * 100) / 100;
   const itemCount = cart.reduce((n, l) => n + l.qty, 0);
   const activePromo = PROMOS.find((p) => p.pct === discountPct);
   const selectedCustomer = state.customers.find((c) => c.id === customerId);
@@ -262,7 +284,8 @@ export function PosModule() {
 
   /* --------------------------------- Cobro --------------------------------- */
 
-  const canCharge = cart.length > 0 && !cashClosedToday && cashOk && !busy;
+  const canCharge =
+    cart.length > 0 && !cashClosedToday && cashOk && !tipOverflow && !busy;
 
   const handleCheckout = async () => {
     if (!canCharge) return;
@@ -276,7 +299,11 @@ export function PosModule() {
           discountLabel: discountPct > 0 ? activePromo?.label : undefined,
           payment: activePayment,
           serviceMode,
-          customerId: state.flags.lealtad && customerId ? customerId : undefined,
+          tip,
+          customerId:
+            SHOW_LEALTAD_UI && state.flags.lealtad && customerId
+              ? customerId
+              : undefined,
           cashReceived:
             activePayment === "efectivo" && cashReceived !== ""
               ? received
@@ -296,6 +323,8 @@ export function PosModule() {
     setPayment("efectivo");
     setServiceMode("llevar");
     setCashReceived("");
+    setTipPct(0);
+    setTipCustom("");
     setMobileTicketOpen(false);
     setSuccess({ folio: result.folio, total: chargedTotal });
   };
@@ -415,7 +444,7 @@ export function PosModule() {
       </div>
 
       {/* ------------------------------- Lealtad -------------------------------- */}
-      {state.flags.lealtad ? (
+      {SHOW_LEALTAD_UI && state.flags.lealtad ? (
         <div className="border-t border-line pt-4">
           <p className="eyebrow">Cliente</p>
           {state.customers.length ? (
@@ -469,12 +498,59 @@ export function PosModule() {
             </span>
           </div>
         ) : null}
+        {tip > 0 ? (
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-muted">
+              Propina{!tipTyped && tipPct > 0 ? ` · ${tipPct}%` : ""}
+            </span>
+            <span className="font-bold text-ink">+{money(tip, currency)}</span>
+          </div>
+        ) : null}
         <div className="flex items-baseline justify-between pt-1">
           <span className="text-sm font-extrabold text-ink">Total</span>
           <span className="display text-2xl text-ink">
             {money(total, currency)}
           </span>
         </div>
+      </div>
+
+      {/* -------------------------------- Propina -------------------------------- */}
+      <div className="border-t border-line pt-4">
+        <p className="eyebrow">Propina</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {TIP_PCTS.map((pct) => (
+            <Chip
+              key={pct}
+              active={!tipTyped && tipPct === pct}
+              onClick={() => {
+                setTipPct(pct);
+                setTipCustom("");
+              }}
+            >
+              {pct === 0 ? "Sin propina" : `${pct}%`}
+            </Chip>
+          ))}
+        </div>
+        <Input
+          type="number"
+          min={0}
+          step="0.01"
+          inputMode="decimal"
+          aria-label="Otro monto de propina"
+          placeholder="Otro monto"
+          value={tipCustom}
+          onChange={(e) => setTipCustom(e.target.value)}
+          className="mt-2 rounded-full"
+        />
+        {tipOverflow ? (
+          <p className="mt-1.5 text-xs font-extrabold text-danger">
+            La propina no puede pasar del consumo ({money(consumo, currency)}).
+          </p>
+        ) : tip > 0 ? (
+          <p className="mt-1.5 text-xs font-extrabold text-matcha-deep">
+            Propina: {money(tip, currency)}
+          </p>
+        ) : null}
       </div>
 
       {/* --------------------------------- Pago ---------------------------------- */}

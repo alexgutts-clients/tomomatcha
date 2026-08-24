@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   deleteExtra,
   deleteMilk,
@@ -74,7 +74,7 @@ const EMPTY_PRODUCT: ProductInput = {
 };
 
 export function ProductsModule() {
-  const { state, currency, submit, busy } = useStore();
+  const { state, currency, submit, busy, uploadMedia, notify } = useStore();
 
   const [category, setCategory] = useState<CategoryId | "todos">("todos");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -82,6 +82,9 @@ export function ProductsModule() {
   const [priceDraft, setPriceDraft] = useState("");
   const cancelEdit = useRef(false);
   const [productForm, setProductForm] = useState<ProductInput | null>(null);
+  // Foto elegida en el modal y aún sin subir: se sube al guardar, cuando ya
+  // existe el producto al que colgarla.
+  const [productPhoto, setProductPhoto] = useState<File | null>(null);
   const [milkForm, setMilkForm] = useState<MilkInput | null>(null);
   const [extraForm, setExtraForm] = useState<ExtraInput | null>(null);
 
@@ -89,6 +92,23 @@ export function ProductsModule() {
 
   const activeProducts = state.products.filter((p) => p.active);
   const pausedCount = state.products.length - activeProducts.length;
+
+  /*
+   * Cuántas veces se ha vendido un producto, contado sobre las ventas que ya
+   * están cargadas. Sirve para avisar antes de eliminarlo: borrarlo es seguro
+   * (el histórico guarda su propia copia de cada renglón), pero quien lo borra
+   * merece saber que había ventas de por medio.
+   */
+  const soldCount = (productId: string): number => {
+    let n = 0;
+    for (const order of state.orders) {
+      if (order.status === "cancelado") continue;
+      for (const item of order.items) {
+        if (item.productId === productId) n += item.qty;
+      }
+    }
+    return n;
+  };
   const avgPrice = activeProducts.length
     ? Math.round(
         activeProducts.reduce((sum, p) => sum + p.price, 0) / activeProducts.length,
@@ -150,7 +170,29 @@ export function ProductsModule() {
       title: productForm.id ? "Producto actualizado" : "Producto creado",
       detail: productForm.name,
     });
-    if (saved) setProductForm(null);
+    if (!saved) return;
+
+    // `saveProduct` devuelve el id, así que la foto elegida antes de guardar
+    // ya tiene a qué producto colgarse.
+    if (productPhoto) {
+      await uploadMedia(productPhoto, { purpose: "producto", productId: saved });
+    }
+
+    setProductPhoto(null);
+    setProductForm(null);
+  };
+
+  const pickProductPhoto = (file: File | null) => {
+    if (file && file.size > 25 * 1024 * 1024) {
+      notify("Archivo demasiado grande", "El límite es 25 MB.", "warn");
+      return;
+    }
+    setProductPhoto(file);
+  };
+
+  const closeProductForm = () => {
+    setProductPhoto(null);
+    setProductForm(null);
   };
 
   const submitMilk = async () => {
@@ -466,11 +508,19 @@ export function ProductsModule() {
                           <ConfirmButton
                             label="Eliminar producto"
                             confirmLabel="Sí, eliminar"
+                            question={
+                              soldCount(p.id)
+                                ? `Se vendió ${soldCount(p.id)} ${soldCount(p.id) === 1 ? "vez" : "veces"}. Los tickets y reportes lo conservan.`
+                                : "Se quita del menú y de las recetas."
+                            }
                             disabled={busy}
                             onConfirm={() =>
                               void submit(() => deleteProduct(p.id), {
                                 title: "Producto eliminado",
-                                detail: p.name,
+                                detail: (data) =>
+                                  data.sold > 0
+                                    ? `${p.name} · sus ${data.sold} venta${data.sold === 1 ? "" : "s"} siguen en el histórico`
+                                    : p.name,
                               })
                             }
                           />
@@ -685,7 +735,7 @@ export function ProductsModule() {
       {/* ---------------------------- Modal de producto ---------------------------- */}
       <Modal
         open={!!productForm}
-        onClose={() => setProductForm(null)}
+        onClose={closeProductForm}
         title={productForm?.id ? "Editar producto" : "Nuevo producto"}
         wide
       >
@@ -696,7 +746,13 @@ export function ProductsModule() {
             ingredients={state.ingredients}
             currency={currency}
             busy={busy}
-            onCancel={() => setProductForm(null)}
+            imageKey={
+              state.products.find((p) => p.id === productForm.id)?.imageKey ?? null
+            }
+            photo={productPhoto}
+            onPhotoChange={pickProductPhoto}
+            mediaReady={state.media.configured}
+            onCancel={closeProductForm}
             onSave={() => void submitProduct()}
           />
         ) : null}
@@ -906,6 +962,47 @@ export function ProductsModule() {
   );
 }
 
+/* ------------------------- Selector de archivo simple ------------------------- */
+
+/**
+ * Elige un archivo sin subirlo: la subida ocurre al guardar, cuando ya existe
+ * el producto al que se le puede colgar la foto.
+ */
+function FilePickButton({
+  label,
+  disabled,
+  onPick,
+}: {
+  label: string;
+  disabled?: boolean;
+  onPick: (file: File | null) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  return (
+    <span className="inline-flex items-center">
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="sr-only"
+        onChange={(e) => {
+          onPick(e.target.files?.[0] ?? null);
+          e.target.value = "";
+        }}
+      />
+      <Button
+        variant="ghost"
+        size="sm"
+        disabled={disabled}
+        onClick={() => inputRef.current?.click()}
+      >
+        {label}
+      </Button>
+    </span>
+  );
+}
+
 /* --------------------------- Formulario de producto --------------------------- */
 
 function ProductForm({
@@ -914,6 +1011,10 @@ function ProductForm({
   ingredients,
   currency,
   busy,
+  imageKey,
+  photo,
+  onPhotoChange,
+  mediaReady,
   onCancel,
   onSave,
 }: {
@@ -922,10 +1023,35 @@ function ProductForm({
   ingredients: { id: string; name: string; unit: string }[];
   currency: string;
   busy: boolean;
+  /** Foto ya guardada del producto (sólo al editar). */
+  imageKey: string | null;
+  /** Archivo elegido en este formulario y todavía sin subir. */
+  photo: File | null;
+  onPhotoChange: (file: File | null) => void;
+  /** R2 configurado: sin esto no se puede subir nada. */
+  mediaReady: boolean;
   onCancel: () => void;
   onSave: () => void;
 }) {
   const hasMilkLine = value.recipe.some((r) => r.ingredientId === "milk");
+
+  // El precio se escribe como texto para poder borrarlo por completo; al
+  // guardar se manda el número. Sin esto el 0 se queda pegado en el campo.
+  const [priceText, setPriceText] = useState(
+    value.price === 0 && !value.id ? "" : String(value.price),
+  );
+
+  // Vista previa local del archivo elegido; se libera al cambiarlo o cerrar.
+  const [preview, setPreview] = useState<string | null>(null);
+  useEffect(() => {
+    if (!photo) {
+      setPreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(photo);
+    setPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [photo]);
 
   return (
     <div className="space-y-5">
@@ -949,6 +1075,69 @@ function ProductForm({
         </Field>
       </div>
 
+      {/* ---------------------------- Foto del producto ---------------------------- */}
+      <div>
+        <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-muted">
+          Foto del producto
+        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <span className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-xl2 bg-matcha-mist text-2xl">
+            {preview ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={preview}
+                alt=""
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <MediaImage
+                objectKey={imageKey}
+                alt=""
+                className="h-full w-full object-cover"
+                fallback={<span aria-hidden>{value.emoji || "🍵"}</span>}
+              />
+            )}
+          </span>
+
+          <div className="min-w-0 flex-1">
+            {mediaReady ? (
+              <>
+                <div className="flex flex-wrap items-center gap-2">
+                  <FilePickButton
+                    label={photo || imageKey ? "Cambiar foto" : "Subir foto"}
+                    disabled={busy}
+                    onPick={onPhotoChange}
+                  />
+                  {photo ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => onPhotoChange(null)}
+                    >
+                      Quitar la foto elegida
+                    </Button>
+                  ) : null}
+                </div>
+                <p className="mt-1.5 text-xs leading-5 text-muted">
+                  {photo
+                    ? `Se subirá al guardar: ${photo.name}`
+                    : "JPG, PNG o WebP, hasta 25 MB. Si no hay foto se muestra el emoji."}
+                </p>
+              </>
+            ) : (
+              <p className="text-xs leading-5 text-muted">
+                Para subir fotos falta configurar Cloudflare R2 (ver{" "}
+                <code className="rounded bg-cream px-1 py-0.5 text-[11px]">
+                  INSTRUCCIONES.md
+                </code>
+                ). Mientras tanto se usa el emoji.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Categoría">
           <Select
@@ -970,8 +1159,17 @@ function ProductForm({
             min={0}
             step="any"
             inputMode="decimal"
-            value={value.price}
-            onChange={(e) => onChange({ ...value, price: Number(e.target.value) })}
+            placeholder="0"
+            value={priceText}
+            onChange={(e) => {
+              const text = e.target.value;
+              setPriceText(text);
+              const parsed = Number(text);
+              onChange({
+                ...value,
+                price: text.trim() === "" || !Number.isFinite(parsed) ? 0 : parsed,
+              });
+            }}
           />
         </Field>
       </div>

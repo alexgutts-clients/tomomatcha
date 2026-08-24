@@ -41,6 +41,13 @@ export function CashCloseModule() {
   const expectedCash = byMethod.efectivo.total;
   const totalDay = todaySales;
 
+  // La propina va dentro del efectivo esperado, porque físicamente está en el
+  // cajón. Se muestra aparte para saber qué parte de lo contado se reparte.
+  const tipsTotal = todayOrders.reduce((sum, o) => sum + o.tip, 0);
+  const tipsCash = todayOrders
+    .filter((o) => o.payment === "efectivo")
+    .reduce((sum, o) => sum + o.tip, 0);
+
   const breakdown = mpOn
     ? [
         {
@@ -137,13 +144,21 @@ export function CashCloseModule() {
         <Stat
           label="Venta total de hoy"
           value={money(totalDay, currency)}
-          hint={`${todayOrders.length} ticket${todayOrders.length === 1 ? "" : "s"} del día`}
+          hint={
+            tipsTotal > 0
+              ? `Incluye ${money(tipsTotal, currency)} de propina`
+              : `${todayOrders.length} ticket${todayOrders.length === 1 ? "" : "s"} del día`
+          }
           tone="matcha"
         />
         <Stat
           label="Efectivo esperado"
           value={money(expectedCash, currency)}
-          hint={`${byMethod.efectivo.count} ticket${byMethod.efectivo.count === 1 ? "" : "s"} en efectivo`}
+          hint={
+            tipsCash > 0
+              ? `Incluye ${money(tipsCash, currency)} de propina`
+              : `${byMethod.efectivo.count} ticket${byMethod.efectivo.count === 1 ? "" : "s"} en efectivo`
+          }
         />
         {mpOn ? (
           <>
@@ -204,6 +219,21 @@ export function CashCloseModule() {
                     {money(todayClose.expectedCard, currency)}
                   </dd>
                 </div>
+                {todayClose.tipsTotal > 0 ? (
+                  <div className="flex items-center justify-between gap-3 py-2.5">
+                    <dt className="text-sm font-bold text-ink">
+                      Propina del día
+                    </dt>
+                    <dd className="text-right">
+                      <span className="display text-lg text-ink">
+                        {money(todayClose.tipsTotal, currency)}
+                      </span>
+                      <span className="ml-2 text-xs text-muted">
+                        {money(todayClose.tipsCash, currency)} en efectivo
+                      </span>
+                    </dd>
+                  </div>
+                ) : null}
                 <div className="flex items-center justify-between gap-3 py-2.5">
                   <dt className="text-sm font-bold text-ink">Diferencia</dt>
                   <dd>
@@ -254,6 +284,16 @@ export function CashCloseModule() {
                     {money(expectedCash, currency)}
                   </dd>
                 </div>
+                {tipsCash > 0 ? (
+                  <div className="flex items-center justify-between gap-3 py-2.5">
+                    <dt className="text-sm font-bold text-ink">
+                      Propina en efectivo
+                    </dt>
+                    <dd className="text-xs text-muted">
+                      {money(tipsCash, currency)} del cajón son propina
+                    </dd>
+                  </div>
+                ) : null}
                 {state.settings.cashFloat > 0 ? (
                   <div className="flex items-center justify-between gap-3 py-2.5">
                     <dt className="text-sm font-bold text-ink">Fondo de caja</dt>
@@ -422,6 +462,9 @@ export function CashCloseModule() {
                     <p className="mt-0.5 text-xs text-muted">
                       {close.orders} ticket{close.orders === 1 ? "" : "s"} · cerró{" "}
                       {close.closedBy}
+                      {close.tipsTotal > 0
+                        ? ` · ${money(close.tipsTotal, currency)} de propina`
+                        : ""}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-3">

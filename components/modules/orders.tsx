@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { cancelOrder, moveOrder } from "@/lib/actions";
+import { cancelOrder, deleteOrder, moveOrder } from "@/lib/actions";
 import { useDerived, useStore } from "@/lib/store";
 import { dayKey, minutesSince, money, time } from "@/lib/format";
 import {
@@ -145,6 +145,11 @@ function OrderCard({ order }: { order: Order }) {
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
         <p className="text-sm font-extrabold text-ink">
           {money(order.total, currency)}
+          {order.tip > 0 ? (
+            <span className="ml-2 text-[11px] font-bold text-muted">
+              incluye {money(order.tip, currency)} de propina
+            </span>
+          ) : null}
         </p>
         <div className="flex items-center gap-2">
           <Badge tone="neutral">{PAYMENT_META[order.payment].short}</Badge>
@@ -185,17 +190,40 @@ function OrderCard({ order }: { order: Order }) {
         </div>
       ) : null}
 
-      {isAdmin && order.status !== "cancelado" ? (
-        <div className="mt-2.5 border-t border-line pt-2.5">
+      {isAdmin ? (
+        <div className="mt-2.5 flex flex-wrap items-center gap-2 border-t border-line pt-2.5">
+          {order.status !== "cancelado" ? (
+            <ConfirmButton
+              label="Cancelar ticket"
+              confirmLabel="Sí, cancelar"
+              question="Se devuelven insumos y puntos."
+              disabled={busy}
+              onConfirm={() =>
+                void submit(() => cancelOrder(order.id), {
+                  title: `Ticket #${order.folio} cancelado`,
+                  detail: "Se devolvieron los insumos y los puntos.",
+                })
+              }
+            />
+          ) : null}
+          {/*
+           * Borrar es distinto de cancelar: el ticket desaparece de la base.
+           * Está aquí para poder limpiar pruebas, porque hasta que la venta no
+           * se va no se puede borrar el producto que la generó ni el insumo de
+           * su receta.
+           */}
           <ConfirmButton
-            label="Cancelar ticket"
-            confirmLabel="Sí, cancelar"
-            question="Se devuelven insumos y puntos."
+            label="Borrar ticket"
+            confirmLabel="Sí, borrar"
+            question="Desaparece del histórico y de los reportes. No se puede deshacer."
             disabled={busy}
             onConfirm={() =>
-              void submit(() => cancelOrder(order.id), {
-                title: `Ticket #${order.folio} cancelado`,
-                detail: "Se devolvieron los insumos y los puntos.",
+              void submit(() => deleteOrder(order.id), {
+                title: (data) => `Ticket #${data.folio} borrado`,
+                detail:
+                  order.status === "cancelado"
+                    ? "Se eliminó del histórico."
+                    : "Se devolvieron insumos y puntos, y se eliminó del histórico.",
               })
             }
           />
@@ -208,7 +236,7 @@ function OrderCard({ order }: { order: Order }) {
 /* --------------------------------- Módulo ------------------------------------ */
 
 export function OrdersModule() {
-  const { state, tz } = useStore();
+  const { state, tz, submit, busy } = useStore();
   const { activeOrders, todayKey } = useDerived();
   const [showCancelled, setShowCancelled] = useState(false);
   const boardRef = useRef<HTMLDivElement>(null);
@@ -358,8 +386,24 @@ export function OrdersModule() {
                       {time(order.createdAt, tz)}
                     </span>
                   </span>
-                  <span className="text-xs text-muted line-through">
-                    {money(order.total, state.settings.currency)}
+                  <span className="flex items-center gap-3">
+                    <span className="text-xs text-muted line-through">
+                      {money(order.total, state.settings.currency)}
+                    </span>
+                    {state.role === "admin" ? (
+                      <ConfirmButton
+                        label="Borrar"
+                        confirmLabel="Sí, borrar"
+                        question="Desaparece del histórico. No se puede deshacer."
+                        disabled={busy}
+                        onConfirm={() =>
+                          void submit(() => deleteOrder(order.id), {
+                            title: (data) => `Ticket #${data.folio} borrado`,
+                            detail: "Se eliminó del histórico.",
+                          })
+                        }
+                      />
+                    ) : null}
                   </span>
                 </li>
               ))}

@@ -163,6 +163,7 @@ export type OrderRow = {
   subtotal: number;
   discount_pct: number;
   discount_label: string | null;
+  tip: number;
   total: number;
   payment: PaymentDb;
   status: OrderStatusDb;
@@ -223,6 +224,8 @@ export type CashCloseRow = {
   expected_card: number;
   counted_cash: number;
   difference: number;
+  tips_cash: number;
+  tips_total: number;
   orders_count: number;
   notes: string | null;
   closed_by: string | null;
@@ -307,6 +310,11 @@ export type Database = {
       cancel_order: {
         Args: { p_order_id: string; p_staff_id?: string | null };
         Returns: undefined;
+      };
+      /** Borra la venta de verdad; devuelve el folio que tenía. */
+      delete_order: {
+        Args: { p_order_id: string; p_staff_id?: string | null };
+        Returns: number;
       };
       close_cash: {
         Args: {

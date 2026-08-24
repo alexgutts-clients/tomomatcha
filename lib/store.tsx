@@ -18,6 +18,7 @@ import type {
   CashClose,
   Ingredient,
   Order,
+  OrderItem,
   Product,
 } from "./types";
 
@@ -277,9 +278,37 @@ export interface Derived {
   lowStock: Ingredient[];
   cashClosedToday: boolean;
   todayClose: CashClose | undefined;
-  topProducts: { product: Product; qty: number; revenue: number }[];
+  topProducts: {
+    product: Product;
+    qty: number;
+    revenue: number;
+    /** El producto ya no está en el menú; se reconstruyó del histórico. */
+    deleted: boolean;
+  }[];
   /** Ventas por día operativo de los últimos 7 días, del más viejo al más nuevo */
   week: { key: string; total: number }[];
+}
+
+/**
+ * Reconstruye un producto a partir de la foto que guardó el renglón, para poder
+ * seguir mostrando en los reportes algo que ya no está en el menú. No se puede
+ * volver a vender: sólo sirve para nombrarlo y pintarlo.
+ */
+function productFromItem(item: OrderItem): Product {
+  return {
+    id: item.productId ?? `eliminado:${item.name}`,
+    name: item.name,
+    category: "matcha",
+    price: item.unitPrice,
+    desc: "",
+    emoji: item.emoji,
+    imageKey: item.imageKey,
+    active: false,
+    popular: false,
+    sortOrder: 0,
+    recipe: [],
+    mods: { milk: false, sweetness: false, temperature: false, extras: false },
+  };
 }
 
 /** Los tickets cancelados no cuentan como venta en ningún cálculo. */
@@ -315,22 +344,34 @@ export function useDerived(): Derived {
 
     const todayClose = state.cashCloses.find((c) => c.dateKey === today);
 
-    const productCount = new Map<string, { qty: number; revenue: number }>();
+    /*
+     * Más vendidos. Se agrupa por producto cuando todavía existe y, si no, por
+     * el nombre que quedó grabado en el renglón: un producto eliminado del menú
+     * sí se vendió, y ocultarlo haría que los totales del reporte no cuadren
+     * con las ventas. Por eso cada renglón guarda su propia foto del producto.
+     */
+    const productCount = new Map<
+      string,
+      { qty: number; revenue: number; product: Product; deleted: boolean }
+    >();
     for (const order of sales) {
       for (const item of order.items) {
-        if (!item.productId) continue;
-        const acc = productCount.get(item.productId) ?? { qty: 0, revenue: 0 };
+        const live = item.productId
+          ? state.products.find((p) => p.id === item.productId)
+          : undefined;
+        const key = live ? live.id : `nombre:${item.name.toLowerCase()}`;
+        const acc = productCount.get(key) ?? {
+          qty: 0,
+          revenue: 0,
+          product: live ?? productFromItem(item),
+          deleted: !live,
+        };
         acc.qty += item.qty;
         acc.revenue += (item.unitPrice + item.modsPrice) * item.qty;
-        productCount.set(item.productId, acc);
+        productCount.set(key, acc);
       }
     }
-    const topProducts = [...productCount.entries()]
-      .flatMap(([productId, data]) => {
-        const product = state.products.find((p) => p.id === productId);
-        return product ? [{ product, ...data }] : [];
-      })
-      .sort((a, b) => b.qty - a.qty);
+    const topProducts = [...productCount.values()].sort((a, b) => b.qty - a.qty);
 
     // Las últimas 7 claves de día operativo, contadas hacia atrás desde hoy.
     const weekKeys: string[] = [];

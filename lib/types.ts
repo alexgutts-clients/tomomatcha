@@ -144,6 +144,8 @@ export interface Order {
   subtotal: number;
   discountPct: number;
   discountLabel?: string;
+  /** Propina dejada por el cliente. Ya viene incluida en `total`. */
+  tip: number;
   total: number;
   payment: PaymentMethod;
   status: OrderStatus;
@@ -190,6 +192,10 @@ export interface CashClose {
   expectedCard: number;
   countedCash: number;
   difference: number;
+  /** Propina cobrada en efectivo: la parte del cajón que se reparte. */
+  tipsCash: number;
+  /** Propina del día por todos los métodos de pago. */
+  tipsTotal: number;
   orders: number;
   notes?: string;
   closedBy: string;
@@ -253,6 +259,8 @@ export interface CheckoutPayload {
   discountLabel?: string;
   payment: PaymentMethod;
   serviceMode: ServiceMode;
+  /** Propina en importe. El servidor la valida contra el consumo. */
+  tip?: number;
   customerId?: string;
   cashReceived?: number;
 }

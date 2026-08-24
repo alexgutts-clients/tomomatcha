@@ -45,6 +45,9 @@ export function ReportsModule() {
   const rangeText = range === "hoy" ? "hoy" : "últimos 7 días";
 
   const ingresos = filtered.reduce((sum, o) => sum + o.total, 0);
+  // La propina va incluida en `ingresos` porque forma parte de lo cobrado, pero
+  // se reporta aparte: es dinero del equipo, no margen del negocio.
+  const propinas = filtered.reduce((sum, o) => sum + o.tip, 0);
   const tickets = filtered.length;
   const ticketPromedio = tickets ? Math.round(ingresos / tickets) : 0;
   const piezas = filtered.reduce(
@@ -137,7 +140,7 @@ export function ReportsModule() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Stat
           label="Ingresos"
           value={money(ingresos, currency)}
@@ -151,6 +154,11 @@ export function ReportsModule() {
           hint="Por pedido"
         />
         <Stat label="Piezas" value={piezas} hint="Bebidas y bakery" />
+        <Stat
+          label="Propina"
+          value={money(propinas, currency)}
+          hint="Incluida en ingresos"
+        />
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[1.4fr_1fr]">
@@ -207,6 +215,11 @@ export function ReportsModule() {
                     <div className="flex items-baseline justify-between gap-2">
                       <p className="truncate text-sm font-bold text-ink">
                         {entry.product.name}
+                        {entry.deleted ? (
+                          <span className="ml-1.5 text-[10px] font-bold text-muted">
+                            (fuera del menú)
+                          </span>
+                        ) : null}
                       </p>
                       <p className="shrink-0 text-xs font-extrabold text-muted">
                         {entry.qty} uds · {money(entry.revenue, currency)}

@@ -120,6 +120,8 @@ El esquema vive en `supabase/migrations/` y es la única fuente de verdad:
 | `20260824000002_rpc.sql` | `create_order`, `close_cash`, `adjust_stock`, `adjust_points`, `business_day` |
 | `20260824000003_cancel_order.sql` | Anulación de tickets con devolución de insumos y puntos |
 | `20260824000004_harden_function_grants.sql` | Quita `EXECUTE` a `PUBLIC` sobre las funciones |
+| `20260824000007_propina.sql` | Propina en el ticket y en el corte de caja |
+| `20260824000008_delete_order.sql` | `delete_order`: borrar una venta y sus efectos |
 
 `lib/database.types.ts` es el espejo en TypeScript del esquema. **Al cambiar una
 migración hay que actualizarlo**, o el tipado dejará de proteger.
@@ -176,8 +178,26 @@ scripts/doctor.mjs  Revisión de conexiones
 - **Auditoría.** Cada movimiento de inventario y cada movimiento de puntos queda
   registrado en `inventory_movements` y `loyalty_transactions`, con quién y por
   qué.
+- **Propina.** Se elige al cobrar, con porcentajes sugeridos (10, 15, 20 %) o
+  escribiendo el monto. Se calcula sobre el consumo ya con descuento, para que
+  una promoción no le recorte al equipo lo que el cliente quiso dejarle, y nunca
+  puede pasar del monto de la cuenta: una propina mayor que el consumo es
+  siempre un dedazo en la caja. Se guarda en su propia columna, así que el corte
+  puede decir qué parte del efectivo del cajón es venta y qué parte se reparte.
+- **Eliminar un producto** se puede siempre, tenga ventas o no. El histórico no
+  se rompe porque cada renglón del ticket guardó su propia copia del producto
+  (nombre, precio, imagen) al momento de la venta; los reportes lo siguen
+  contando y lo marcan como «fuera del menú». Lo que se pierde es la receta.
 - **Anular un ticket** devuelve los insumos y retira los puntos, y sólo se puede
   antes de cerrar el corte de ese día.
+- **Borrar un ticket** es otra cosa distinta de anularlo, y sólo lo puede hacer
+  un administrador. Anular conserva la venta porque ocurrió y el histórico tiene
+  que poder explicarla; borrar la elimina de la base. Existe para limpiar datos
+  de prueba: hasta que la venta no se va, no se puede borrar el producto que la
+  generó, y hasta que el producto no se va, no se puede borrar el insumo de su
+  receta. Antes de borrar se devuelven los insumos y se retiran los puntos, en
+  ese orden, porque después ya no habría forma de saber cuánto devolver. Tampoco
+  se puede si el día de ese ticket ya tiene el corte cerrado.
 - **Cuánto gasta cada producto.** La receta se edita desde Productos, y también
   al revés: en Inventario, cada insumo abre un panel de *consumo* que lista todos
   los productos que lo usan y con cuánto. Cambiar ahí «180 ml» actualiza la

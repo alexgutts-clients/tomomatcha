@@ -245,9 +245,23 @@ export async function setProductMod(
   });
 }
 
+/**
+ * Elimina un producto, tenga ventas o no.
+ *
+ * Borrarlo no rompe el histórico porque cada renglón de `order_items` guardó su
+ * propia foto del producto al momento de la venta (nombre, precio, imagen) y la
+ * llave apunta con `on delete set null`: los tickets viejos siguen diciendo
+ * exactamente qué se vendió y por cuánto. Los reportes agrupan esas ventas por
+ * el nombre grabado, así que el producto eliminado sigue apareciendo en "más
+ * vendidos" marcado como fuera del menú.
+ *
+ * Lo único que se limpia a mano es la receta: `product_recipe_items` cae en
+ * cascada, y el inventario ya descontado no se toca porque ese consumo ocurrió
+ * de verdad.
+ */
 export async function deleteProduct(
   productId: string,
-): Promise<ActionResult<undefined>> {
+): Promise<ActionResult<{ sold: number }>> {
   return run(requireAdmin, async () => {
     const id = reqId(productId, "El producto");
     const supabase = db();
@@ -257,22 +271,10 @@ export async function deleteProduct(
       .select("id", { count: "exact", head: true })
       .eq("product_id", id);
 
-    // Con ventas registradas se saca del menú en lugar de borrarse: así los
-    // reportes históricos siguen sabiendo qué se vendió.
-    if ((sold.count ?? 0) > 0) {
-      const { error } = await supabase
-        .from("products")
-        .update({ active: false })
-        .eq("id", id);
-      if (error) throw new Error(error.message);
-      throw new ValidationError(
-        "Este producto tiene ventas registradas, así que se sacó del menú en lugar de borrarse (los reportes históricos lo necesitan).",
-      );
-    }
-
     const { error } = await supabase.from("products").delete().eq("id", id);
     if (error) throw new Error(error.message);
-    return undefined;
+
+    return { sold: sold.count ?? 0 };
   });
 }
 

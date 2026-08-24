@@ -95,6 +95,9 @@ export async function checkout(
           SERVICE_MODES,
           "El modo de servicio",
         ),
+        // El tope real (no mayor que el consumo) lo aplica `create_order`,
+        // que es quien conoce los precios de verdad.
+        tip: reqNumber(payload.tip ?? 0, "La propina", { min: 0 }),
         customerId: payload.customerId
           ? reqId(payload.customerId, "El cliente")
           : null,
@@ -172,6 +175,30 @@ export async function cancelOrder(
     });
     if (error) throw new Error(error.message);
     return undefined;
+  });
+}
+
+/**
+ * Borra un ticket de la base, devolviendo insumos y puntos antes.
+ *
+ * No es lo mismo que anular. `cancelOrder` conserva el ticket porque la venta
+ * ocurrió y el histórico debe poder explicarla; esto lo elimina, y existe para
+ * limpiar datos de prueba. Borrar la venta es lo que después deja borrar el
+ * producto que se vendió, y luego el insumo de su receta.
+ *
+ * Sólo administradores: es la única operación del sistema que destruye
+ * histórico sin dejar rastro.
+ */
+export async function deleteOrder(
+  orderId: string,
+): Promise<ActionResult<{ folio: number }>> {
+  return run(requireAdmin, async (staff) => {
+    const { data, error } = await db().rpc("delete_order", {
+      p_order_id: reqId(orderId, "El ticket"),
+      p_staff_id: staff.id,
+    });
+    if (error) throw new Error(error.message);
+    return { folio: (data as unknown as number) ?? 0 };
   });
 }
 
