@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { db, isSupabaseConfigured } from "@/lib/supabase";
 import { loyaltyTier } from "@/lib/types";
+import { SHOW_LEALTAD_UI } from "@/lib/feature-visibility";
 
 /* ============================================================================
  * Tarjeta de lealtad del cliente · página pública.
@@ -27,6 +28,9 @@ export default async function Page({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
+
+  // La tarjeta pública está oculta mientras el módulo de lealtad no se muestre.
+  if (!SHOW_LEALTAD_UI) notFound();
 
   if (!TOKEN_RE.test(token) || !isSupabaseConfigured()) notFound();
 

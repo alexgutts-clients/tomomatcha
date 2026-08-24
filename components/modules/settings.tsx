@@ -15,6 +15,7 @@ import { CATALOG_SUMMARY } from "@/lib/catalog";
 import { useStore } from "@/lib/store";
 import { shortDate, time } from "@/lib/format";
 import type { FeatureFlags, Role } from "@/lib/types";
+import { SHOW_LEALTAD_UI } from "@/lib/feature-visibility";
 import {
   AccessGate,
   Badge,
@@ -43,12 +44,6 @@ const MODULES: {
     desc: "Descuento automático por receta, alertas de nivel mínimo y bitácora de movimientos. Al apagarlo, las ventas dejan de descontar stock.",
   },
   {
-    key: "lealtad",
-    emoji: "💚",
-    name: "Lealtad y clientes",
-    desc: "Tarjeta digital con QR, puntos por compra y canjes. También controla el selector de cliente en el punto de venta.",
-  },
-  {
     key: "resenasGoogle",
     emoji: "⭐",
     name: "Reseñas de Google",
@@ -60,6 +55,17 @@ const MODULES: {
     name: "Pagos con Mercado Pago",
     desc: "Añade Mercado Pago como método de cobro. El registro es manual: la aplicación no procesa el pago, sólo lo contabiliza en el corte.",
   },
+  // El módulo de lealtad está oculto temporalmente (ver SHOW_LEALTAD_UI).
+  ...(SHOW_LEALTAD_UI
+    ? [
+        {
+          key: "lealtad" as keyof FeatureFlags,
+          emoji: "💚",
+          name: "Lealtad y clientes",
+          desc: "Tarjeta digital con QR, puntos por compra y canjes. También controla el selector de cliente en el punto de venta.",
+        },
+      ]
+    : []),
 ];
 
 const TIMEZONES = [
@@ -124,13 +130,6 @@ export function SettingsModule() {
         <h2 className="display mt-1 text-xl text-ink">Identidad y operación</h2>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <Field label="Nombre del negocio">
-            <Input
-              value={form.businessName}
-              maxLength={120}
-              onChange={(e) => setForm({ ...form, businessName: e.target.value })}
-            />
-          </Field>
           <Field label="Sucursal">
             <Input
               value={form.branchName}
@@ -172,35 +171,38 @@ export function SettingsModule() {
           </Field>
         </div>
 
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <Field
-            label="Puntos por peso"
-            hint="1 = un punto por cada peso de compra"
-          >
-            <Input
-              type="number"
-              min={0}
-              step="any"
-              inputMode="decimal"
-              value={form.pointsPerCurrency}
-              onChange={(e) =>
-                setForm({ ...form, pointsPerCurrency: Number(e.target.value) })
-              }
-            />
-          </Field>
-          <Field label="Puntos para canjear una bebida">
-            <Input
-              type="number"
-              min={1}
-              step="1"
-              inputMode="numeric"
-              value={form.rewardCost}
-              onChange={(e) =>
-                setForm({ ...form, rewardCost: Number(e.target.value) })
-              }
-            />
-          </Field>
-        </div>
+        {/* Ajustes de puntos: ocultos junto con el módulo de lealtad. */}
+        {SHOW_LEALTAD_UI ? (
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <Field
+              label="Puntos por peso"
+              hint="1 = un punto por cada peso de compra"
+            >
+              <Input
+                type="number"
+                min={0}
+                step="any"
+                inputMode="decimal"
+                value={form.pointsPerCurrency}
+                onChange={(e) =>
+                  setForm({ ...form, pointsPerCurrency: Number(e.target.value) })
+                }
+              />
+            </Field>
+            <Field label="Puntos para canjear una bebida">
+              <Input
+                type="number"
+                min={1}
+                step="1"
+                inputMode="numeric"
+                value={form.rewardCost}
+                onChange={(e) =>
+                  setForm({ ...form, rewardCost: Number(e.target.value) })
+                }
+              />
+            </Field>
+          </div>
+        ) : null}
 
         <div className="mt-5 border-t border-line pt-4">
           <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-muted">
@@ -385,10 +387,14 @@ export function SettingsModule() {
                 {state.ingredients.length}
               </dd>
             </div>
-            <div className="flex items-center justify-between gap-3 py-3">
-              <dt className="text-muted">Clientes de lealtad</dt>
-              <dd className="font-extrabold text-ink">{state.customers.length}</dd>
-            </div>
+            {SHOW_LEALTAD_UI ? (
+              <div className="flex items-center justify-between gap-3 py-3">
+                <dt className="text-muted">Clientes de lealtad</dt>
+                <dd className="font-extrabold text-ink">
+                  {state.customers.length}
+                </dd>
+              </div>
+            ) : null}
             {state.settings.catalogSeededAt ? (
               <div className="flex items-center justify-between gap-3 py-3">
                 <dt className="text-muted">Catálogo inicial cargado</dt>
