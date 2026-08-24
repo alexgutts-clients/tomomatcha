@@ -751,16 +751,20 @@ function IngredientUsagePanel({
   const [addProductId, setAddProductId] = useState("");
   const [addQty, setAddQty] = useState("");
 
-  /** Guarda el producto completo con la cantidad nueva para este insumo. */
+  /**
+   * Guarda el producto completo con la cantidad nueva para un renglón de su
+   * receta. `targetId` es el insumo, o "milk" para el renglón «leche elegida».
+   */
   const saveQty = async (
     product: (typeof state.products)[number],
+    targetId: string,
     qty: number | null,
   ) => {
     const recipe = product.recipe
-      .filter((r) => r.ingredientId !== ingredient.id)
+      .filter((r) => r.ingredientId !== targetId)
       .map((r) => ({ ingredientId: r.ingredientId, qty: r.qty }));
     if (qty !== null && qty > 0) {
-      recipe.push({ ingredientId: ingredient.id, qty });
+      recipe.push({ ingredientId: targetId, qty });
     }
     return submit(
       () =>
@@ -783,6 +787,66 @@ function IngredientUsagePanel({
     );
   };
 
+  /**
+   * Un renglón editable. Es una función, no un componente, para que el campo
+   * no pierda el foco mientras se escribe.
+   */
+  const usageRow = (
+    draftKey: string,
+    product: (typeof state.products)[number],
+    qty: number,
+    unit: string,
+    onSave: (value: number) => void,
+    onRemove?: () => void,
+  ) => {
+    const value = drafts[draftKey] ?? String(qty);
+    const changed = Number(value) !== qty;
+    return (
+      <div
+        key={draftKey}
+        className="flex flex-wrap items-center gap-3 rounded-xl2 border border-line bg-paper px-4 py-3"
+      >
+        <span className="text-lg" aria-hidden>
+          {product.emoji}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-sm font-bold text-ink">
+          {product.name}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <Input
+            type="number"
+            min={0}
+            step="any"
+            inputMode="decimal"
+            aria-label={`Cantidad de ${ingredient.name} en ${product.name}`}
+            value={value}
+            onChange={(e) =>
+              setDrafts((d) => ({ ...d, [draftKey]: e.target.value }))
+            }
+            className="w-24 text-center"
+          />
+          <span className="w-8 text-xs font-bold text-muted">{unit}</span>
+        </span>
+        <Button
+          variant={changed ? "matcha" : "ghost"}
+          size="sm"
+          disabled={busy || !changed || !(Number(value) > 0)}
+          onClick={() => onSave(Number(value))}
+        >
+          Guardar
+        </Button>
+        {onRemove ? (
+          <ConfirmButton
+            label="Quitar"
+            confirmLabel="Sí"
+            disabled={busy}
+            onConfirm={onRemove}
+          />
+        ) : null}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-5">
       <p className="-mt-2 text-sm leading-6 text-muted">
@@ -793,59 +857,22 @@ function IngredientUsagePanel({
 
       {direct.length ? (
         <div className="space-y-2">
-          {direct.map(({ product, qty }) => {
-            const key = product.id;
-            const value = drafts[key] ?? String(qty);
-            const changed = Number(value) !== qty;
-            return (
-              <div
-                key={key}
-                className="flex flex-wrap items-center gap-3 rounded-xl2 border border-line bg-paper px-4 py-3"
-              >
-                <span className="text-lg" aria-hidden>
-                  {product.emoji}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-sm font-bold text-ink">
-                  {product.name}
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <Input
-                    type="number"
-                    min={0}
-                    step="any"
-                    inputMode="decimal"
-                    aria-label={`Cantidad de ${ingredient.name} en ${product.name}`}
-                    value={value}
-                    onChange={(e) =>
-                      setDrafts((d) => ({ ...d, [key]: e.target.value }))
-                    }
-                    className="w-24 text-center"
-                  />
-                  <span className="w-8 text-xs font-bold text-muted">
-                    {ingredient.unit}
-                  </span>
-                </span>
-                <Button
-                  variant={changed ? "matcha" : "ghost"}
-                  size="sm"
-                  disabled={busy || !changed || !(Number(value) > 0)}
-                  onClick={() => void saveQty(product, Number(value))}
-                >
-                  Guardar
-                </Button>
-                <ConfirmButton
-                  label="Quitar"
-                  confirmLabel="Sí"
-                  disabled={busy}
-                  onConfirm={() => void saveQty(product, null)}
-                />
-              </div>
-            );
-          })}
+          {direct.map(({ product, qty }) =>
+            usageRow(
+              product.id,
+              product,
+              qty,
+              ingredient.unit,
+              (value) => void saveQty(product, ingredient.id, value),
+              () => void saveQty(product, ingredient.id, null),
+            ),
+          )}
         </div>
       ) : (
         <p className="rounded-xl2 border border-dashed border-line px-4 py-6 text-center text-sm leading-6 text-muted">
-          Ningún producto tiene este insumo en su receta todavía.
+          {asMilk && viaMilk.length
+            ? "Ningún producto lo lleva por receta fija; se consume por la leche que elige el cliente, abajo."
+            : "Ningún producto tiene este insumo en su receta todavía."}
         </p>
       )}
 
@@ -892,7 +919,7 @@ function IngredientUsagePanel({
               onClick={async () => {
                 const product = available.find((p) => p.id === addProductId);
                 if (!product) return;
-                const done = await saveQty(product, Number(addQty));
+                const done = await saveQty(product, ingredient.id, Number(addQty));
                 if (done) {
                   setAddProductId("");
                   setAddQty("");
@@ -907,16 +934,29 @@ function IngredientUsagePanel({
 
       {/* ------------------------- Consumo indirecto (leche) ------------------------- */}
       {asMilk && viaMilk.length ? (
-        <div className="rounded-xl2 border border-line bg-cream px-4 py-3">
-          <p className="text-xs font-extrabold text-ink">
+        <div className="border-t border-line pt-4">
+          <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-muted">
             También se consume como leche «{asMilk.name}»
           </p>
           <p className="mt-1 text-xs leading-5 text-muted">
-            {viaMilk.length} producto{viaMilk.length === 1 ? "" : "s"} usan el
-            renglón «leche elegida por el cliente». La cantidad se define en la
-            receta de cada producto y se descuenta de este insumo solo cuando el
-            cliente elige esta leche.
+            Estos productos llevan el renglón «leche elegida por el cliente»:
+            descuentan de este insumo sólo cuando el cliente pide{" "}
+            {asMilk.name.toLowerCase()}. La cantidad es la misma para cualquier
+            leche que elija, así que cambiarla aquí la cambia para todas.
           </p>
+          <div className="mt-2 space-y-2">
+            {viaMilk.map((product) => {
+              const qty =
+                product.recipe.find((r) => r.ingredientId === "milk")?.qty ?? 0;
+              return usageRow(
+                `milk-${product.id}`,
+                product,
+                qty,
+                "ml",
+                (value) => void saveQty(product, "milk", value),
+              );
+            })}
+          </div>
         </div>
       ) : null}
 

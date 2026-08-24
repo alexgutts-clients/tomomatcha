@@ -336,6 +336,8 @@ En este orden:
    - Para revisar o cambiar **cuánto gasta cada producto** de un insumo, abre
      **Consumo** en ese insumo: ahí ves todos los productos que lo usan, editas
      los mililitros o gramos y puedes añadirlo a la receta de otro producto.
+     Las leches también salen ahí; ojo: esa cantidad aplica a cualquier leche
+     que elija el cliente, no sólo a la que abriste.
 5. **Productos preparados.** Si preparan jarabes, mermeladas o pasteles en casa,
    regístralos en **Preparados** con su fecha de elaboración y de caducidad. La
    alerta del último día no se va sola: se queda hasta que alguien pulsa «Ya lo

@@ -180,9 +180,13 @@ scripts/doctor.mjs  Revisión de conexiones
   antes de cerrar el corte de ese día.
 - **Cuánto gasta cada producto.** La receta se edita desde Productos, y también
   al revés: en Inventario, cada insumo abre un panel de *consumo* que lista todos
-  los productos que lo usan y con cuánto. Cambiar ahí «180 ml de leche» actualiza
-  la receta del producto, y desde el mismo panel se puede sumar el insumo a la
+  los productos que lo usan y con cuánto. Cambiar ahí «180 ml» actualiza la
+  receta del producto, y desde el mismo panel se puede sumar el insumo a la
   receta de otro producto. Las dos vistas escriben en la misma tabla.
+  - Las leches aparecen en el panel de su propio insumo, aunque la receta las
+    lleve como «leche elegida por el cliente». Esa cantidad es la misma para
+    cualquier leche que pida el cliente, así que cambiarla vale para todas; el
+    panel lo advierte.
 - **Cuándo avisar que falta un insumo.** Cada insumo tiene un mínimo y, si se
   define un *nivel objetivo* (lo que cabe lleno), el aviso se puede fijar como
   porcentaje: «avisar al 25 %» calcula el mínimo solo. Por debajo del mínimo el
