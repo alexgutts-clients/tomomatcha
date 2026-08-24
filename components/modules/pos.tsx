@@ -1,31 +1,40 @@
 "use client";
 
 import Link from "next/link";
-import { ReactNode, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
+import { checkout } from "@/lib/actions";
 import { useDerived, useStore } from "@/lib/store";
 import { money } from "@/lib/format";
 import {
-  CartLine,
+  CATEGORY_IDS,
   CATEGORY_META,
-  CategoryId,
-  LineModifiers,
-  Order,
   PAYMENT_META,
-  PaymentMethod,
   pointsFor,
-  Product,
-  Sweetness,
   SWEETNESS_STEPS,
-  Temperature,
+  type CartLine,
+  type CategoryId,
+  type LineModifiers,
+  type PaymentMethod,
+  type Product,
+  type Sweetness,
+  type Temperature,
 } from "@/lib/types";
-import { Badge, Button, Card, cx, DemoTag, Modal, PageHeader } from "@/components/ui";
-
-const CATEGORY_IDS = Object.keys(CATEGORY_META) as CategoryId[];
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  Input,
+  MediaImage,
+  Modal,
+  PageHeader,
+  cx,
+} from "@/components/ui";
 
 const PROMOS: { pct: number; label: string }[] = [
-  { pct: 0, label: "Sin promo" },
-  { pct: 10, label: "Matcha lovers −10%" },
-  { pct: 15, label: "Cliente frecuente −15%" },
+  { pct: 0, label: "Sin promoción" },
+  { pct: 10, label: "Descuento 10%" },
+  { pct: 15, label: "Cliente frecuente 15%" },
 ];
 
 const TEMP_LABEL: Record<Temperature, string> = {
@@ -83,7 +92,7 @@ function Chip({
 }
 
 export function PosModule() {
-  const { state, checkout, notify } = useStore();
+  const { state, currency, submit, busy, notify } = useStore();
   const { cashClosedToday } = useDerived();
 
   const [search, setSearch] = useState("");
@@ -95,7 +104,9 @@ export function PosModule() {
   const [payment, setPayment] = useState<PaymentMethod>("efectivo");
   const [cashReceived, setCashReceived] = useState("");
   const [mobileTicketOpen, setMobileTicketOpen] = useState(false);
-  const [success, setSuccess] = useState<Order | null>(null);
+  const [success, setSuccess] = useState<{ folio: number; total: number } | null>(
+    null,
+  );
   const lineCounter = useRef(0);
 
   /* ------------------------------ Catálogo -------------------------------- */
@@ -108,6 +119,15 @@ export function PosModule() {
       (!term ||
         p.name.toLowerCase().includes(term) ||
         p.desc.toLowerCase().includes(term)),
+  );
+
+  const availableMilks = useMemo(
+    () => state.milks.filter((m) => m.available),
+    [state.milks],
+  );
+  const availableExtras = useMemo(
+    () => state.extras.filter((e) => e.available),
+    [state.extras],
   );
 
   /* ---------------------------- Precios de línea --------------------------- */
@@ -143,13 +163,13 @@ export function PosModule() {
   };
 
   const subtotal = cart.reduce((sum, l) => sum + lineUnitPrice(l) * l.qty, 0);
-  const total = Math.round(subtotal * (1 - discountPct / 100));
-  const discountAmount = subtotal - total;
+  const total = Math.round(subtotal * (1 - discountPct / 100) * 100) / 100;
+  const discountAmount = Math.round((subtotal - total) * 100) / 100;
   const itemCount = cart.reduce((n, l) => n + l.qty, 0);
   const activePromo = PROMOS.find((p) => p.pct === discountPct);
   const selectedCustomer = state.customers.find((c) => c.id === customerId);
 
-  // Si Mercado Pago se apaga desde Ajustes, nunca dejamos ese método activo.
+  // Si Mercado Pago se apaga en Ajustes, ese método deja de estar seleccionable.
   const activePayment: PaymentMethod =
     payment === "mercadopago" && !state.flags.mercadoPago ? "efectivo" : payment;
   const received = Number(cashReceived) || 0;
@@ -166,14 +186,11 @@ export function PosModule() {
   /* ------------------------- Borrador (modal de línea) ---------------------- */
 
   const openProduct = (product: Product) => {
-    const availableMilks = state.milks.filter((m) => m.available);
-    const defaultMilk =
-      availableMilks.find((m) => m.id === "entera") ?? availableMilks[0];
     setDraft({
       lineKey: null,
       productId: product.id,
       qty: 1,
-      milkId: product.mods.milk ? defaultMilk?.id : undefined,
+      milkId: product.mods.milk ? availableMilks[0]?.id : undefined,
       sweetness: product.mods.sweetness ? 50 : undefined,
       temperature: product.mods.temperature ? "caliente" : undefined,
       extraIds: [],
@@ -240,29 +257,40 @@ export function PosModule() {
 
   /* --------------------------------- Cobro --------------------------------- */
 
-  const canCharge = cart.length > 0 && !cashClosedToday && cashOk;
+  const canCharge = cart.length > 0 && !cashClosedToday && cashOk && !busy;
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     if (!canCharge) return;
-    const order = checkout({
-      lines: cart,
-      discountPct,
-      discountLabel: discountPct > 0 ? activePromo?.label : undefined,
-      payment: activePayment,
-      customerId: state.flags.lealtad && customerId ? customerId : undefined,
-    });
-    if (!order) return;
-    notify(
-      "Venta registrada (demo)",
-      `Ticket #${order.folio} · ${money(order.total)} · ${PAYMENT_META[order.payment].short}`,
+    const chargedTotal = total;
+
+    const result = await submit(
+      () =>
+        checkout({
+          lines: cart,
+          discountPct,
+          discountLabel: discountPct > 0 ? activePromo?.label : undefined,
+          payment: activePayment,
+          customerId: state.flags.lealtad && customerId ? customerId : undefined,
+          cashReceived:
+            activePayment === "efectivo" && cashReceived !== ""
+              ? received
+              : undefined,
+        }),
+      {
+        title: (data) => `Venta #${data.folio} registrada`,
+        detail: `${money(chargedTotal, currency)} · ${PAYMENT_META[activePayment].short}`,
+      },
     );
+
+    if (!result) return;
+
     setCart([]);
     setDiscountPct(0);
     setCustomerId("");
     setPayment("efectivo");
     setCashReceived("");
     setMobileTicketOpen(false);
-    setSuccess(order);
+    setSuccess({ folio: result.folio, total: chargedTotal });
   };
 
   /* ----------------------------- Cuerpo del ticket -------------------------- */
@@ -290,7 +318,9 @@ export function PosModule() {
                     {line.qty}× {product.name}
                   </span>
                   {summary ? (
-                    <span className="mt-0.5 block text-xs text-muted">{summary}</span>
+                    <span className="mt-0.5 block text-xs text-muted">
+                      {summary}
+                    </span>
                   ) : null}
                   {line.modifiers.notes ? (
                     <span className="mt-0.5 block text-xs italic text-muted">
@@ -299,7 +329,7 @@ export function PosModule() {
                   ) : null}
                 </button>
                 <span className="shrink-0 pt-0.5 text-sm font-extrabold text-ink">
-                  {money(lineUnitPrice(line) * line.qty)}
+                  {money(lineUnitPrice(line) * line.qty, currency)}
                 </span>
                 <button
                   type="button"
@@ -338,25 +368,41 @@ export function PosModule() {
       {/* ------------------------------- Lealtad -------------------------------- */}
       {state.flags.lealtad ? (
         <div className="border-t border-line pt-4">
-          <p className="eyebrow">Lealtad</p>
-          <select
-            aria-label="Cliente de lealtad"
-            value={customerId}
-            onChange={(e) => setCustomerId(e.target.value)}
-            className="focus-ring mt-2 w-full rounded-full border border-line bg-white px-4 py-2.5 text-sm font-bold text-ink"
-          >
-            <option value="">Venta al público</option>
-            {state.customers.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name} · {c.points} pts
-              </option>
-            ))}
-          </select>
-          {selectedCustomer ? (
-            <p className="mt-1.5 text-xs text-muted">
-              Sumará {pointsFor(total)} puntos a {selectedCustomer.name}.
+          <p className="eyebrow">Cliente</p>
+          {state.customers.length ? (
+            <>
+              <select
+                aria-label="Cliente de lealtad"
+                value={customerId}
+                onChange={(e) => setCustomerId(e.target.value)}
+                className="focus-ring mt-2 w-full rounded-full border border-line bg-white px-4 py-2.5 text-sm font-bold text-ink"
+              >
+                <option value="">Venta al público</option>
+                {state.customers.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} · {c.points} pts
+                  </option>
+                ))}
+              </select>
+              {selectedCustomer ? (
+                <p className="mt-1.5 text-xs text-muted">
+                  Sumará {pointsFor(total, state.settings.pointsPerCurrency)}{" "}
+                  puntos a {selectedCustomer.name}.
+                </p>
+              ) : null}
+            </>
+          ) : (
+            <p className="mt-2 text-xs leading-5 text-muted">
+              Todavía no hay clientes registrados.{" "}
+              <Link
+                href="/clientes"
+                className="font-bold text-matcha-deep hover:underline"
+              >
+                Registra el primero
+              </Link>
+              .
             </p>
-          ) : null}
+          )}
         </div>
       ) : null}
 
@@ -364,17 +410,21 @@ export function PosModule() {
       <div className="space-y-1.5 border-t border-line pt-4">
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted">Subtotal</span>
-          <span className="font-bold text-ink">{money(subtotal)}</span>
+          <span className="font-bold text-ink">{money(subtotal, currency)}</span>
         </div>
         {discountAmount > 0 ? (
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted">Descuento · {activePromo?.label}</span>
-            <span className="font-bold text-matcha-deep">−{money(discountAmount)}</span>
+            <span className="font-bold text-matcha-deep">
+              −{money(discountAmount, currency)}
+            </span>
           </div>
         ) : null}
         <div className="flex items-baseline justify-between pt-1">
           <span className="text-sm font-extrabold text-ink">Total</span>
-          <span className="display text-2xl text-ink">{money(total)}</span>
+          <span className="display text-2xl text-ink">
+            {money(total, currency)}
+          </span>
         </div>
       </div>
 
@@ -402,7 +452,9 @@ export function PosModule() {
                   {PAYMENT_META[opt.id].label}
                 </span>
                 {selected ? (
-                  <span className="text-xs font-extrabold text-matcha-deep">✓ Elegido</span>
+                  <span className="text-xs font-extrabold text-matcha-deep">
+                    ✓ Elegido
+                  </span>
                 ) : null}
               </button>
             );
@@ -422,16 +474,16 @@ export function PosModule() {
                 active={cashReceived === "200"}
                 onClick={() => setCashReceived("200")}
               >
-                {money(200)}
+                {money(200, currency)}
               </Chip>
               <Chip
                 active={cashReceived === "500"}
                 onClick={() => setCashReceived("500")}
               >
-                {money(500)}
+                {money(500, currency)}
               </Chip>
             </div>
-            <input
+            <Input
               type="number"
               min={0}
               inputMode="decimal"
@@ -439,25 +491,21 @@ export function PosModule() {
               placeholder="Efectivo recibido"
               value={cashReceived}
               onChange={(e) => setCashReceived(e.target.value)}
-              className="focus-ring w-full rounded-full border border-line bg-white px-4 py-2.5 text-sm font-bold text-ink placeholder:font-normal placeholder:text-muted"
+              className="rounded-full"
             />
             {cart.length ? (
               cashOk ? (
                 <p className="text-xs font-extrabold text-matcha-deep">
-                  Cambio: {money(received - total)}
+                  Cambio: {money(Math.round((received - total) * 100) / 100, currency)}
                 </p>
               ) : (
                 <p className="text-xs font-extrabold text-danger">
-                  Faltan {money(total - received)}
+                  Faltan {money(Math.round((total - received) * 100) / 100, currency)}
                 </p>
               )
             ) : null}
           </div>
-        ) : (
-          <p className="mt-3 text-xs leading-5 text-muted">
-            Se simula la aprobación al instante — no se cobra nada.
-          </p>
-        )}
+        ) : null}
       </div>
 
       <Button
@@ -465,13 +513,14 @@ export function PosModule() {
         size="lg"
         className="w-full"
         disabled={!canCharge}
-        onClick={handleCheckout}
+        onClick={() => void handleCheckout()}
       >
-        Cobrar {money(total)}
+        {busy ? "Cobrando…" : `Cobrar ${money(total, currency)}`}
       </Button>
       {cashClosedToday ? (
         <p className="text-center text-xs text-muted">
-          La caja de hoy está cerrada; reábrela en Corte para cobrar.
+          La caja de hoy está cerrada. Un administrador debe reabrir el turno en
+          Corte de caja.
         </p>
       ) : null}
     </div>
@@ -479,16 +528,43 @@ export function PosModule() {
 
   /* --------------------------------- Render --------------------------------- */
 
+  if (!state.products.some((p) => p.active)) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow="Caja"
+          title="Punto de venta"
+          desc="Antes de cobrar hace falta tener productos activos en la carta."
+        />
+        <EmptyState
+          emoji="🍵"
+          title="La carta está vacía"
+          desc={
+            state.role === "admin"
+              ? "Crea tus productos en el módulo de Productos, o carga el catálogo sugerido desde Ajustes."
+              : "Pídele a un administrador que dé de alta los productos del menú."
+          }
+          action={
+            state.role === "admin" ? (
+              <Link
+                href="/productos"
+                className="focus-ring inline-flex items-center rounded-full bg-matcha-deep px-5 py-2.5 text-sm font-bold text-paper shadow-pop hover:bg-matcha"
+              >
+                Ir a Productos
+              </Link>
+            ) : null
+          }
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 pb-10 lg:pb-0">
       <PageHeader
-        eyebrow={
-          cashClosedToday
-            ? "Caja cerrada · cobro simulado"
-            : "Caja abierta · cobro simulado"
-        }
+        eyebrow={cashClosedToday ? "Caja cerrada" : "Caja abierta"}
         title="Punto de venta"
-        desc="Arma el ticket, personaliza cada bebida y cobra en segundos. Todo es demo: ningún pago se procesa de verdad."
+        desc="Arma el ticket, personaliza cada bebida y cobra. Cada venta crea su comanda y descuenta los insumos de la receta."
       />
 
       {cashClosedToday ? (
@@ -502,29 +578,31 @@ export function PosModule() {
                 Ventas en pausa: el corte de hoy ya se registró
               </p>
               <p className="mt-0.5 text-xs leading-5 text-muted">
-                Reabre la caja desde el módulo de corte para seguir cobrando.
+                Para seguir cobrando hay que reabrir el turno desde Corte de caja.
               </p>
             </div>
           </div>
-          <Link
-            href="/corte"
-            className="focus-ring rounded-full border border-amber/40 px-4 py-2 text-xs font-extrabold text-amber transition hover:bg-amber/10"
-          >
-            Ir a Corte de caja
-          </Link>
+          {state.role === "admin" ? (
+            <Link
+              href="/corte"
+              className="focus-ring rounded-full border border-amber/40 px-4 py-2 text-xs font-extrabold text-amber transition hover:bg-amber/10"
+            >
+              Ir a Corte de caja
+            </Link>
+          ) : null}
         </Card>
       ) : null}
 
       <div className="gap-5 lg:grid lg:grid-cols-[1fr_360px]">
         {/* -------------------------------- Catálogo ------------------------------ */}
         <div className="min-w-0 space-y-4">
-          <input
+          <Input
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar bebida o bakery…"
             aria-label="Buscar producto"
-            className="focus-ring w-full rounded-full border border-line bg-white px-5 py-2.5 text-sm text-ink placeholder:text-muted"
+            className="rounded-full px-5"
           />
 
           <div className="flex flex-wrap gap-2">
@@ -569,11 +647,13 @@ export function PosModule() {
                   className="card focus-ring flex flex-col gap-2.5 p-3 text-left transition hover:border-matcha"
                 >
                   <span className="flex w-full items-start justify-between gap-2">
-                    <span
-                      className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl2 bg-matcha-mist text-3xl"
-                      aria-hidden
-                    >
-                      {p.emoji}
+                    <span className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl2 bg-matcha-mist text-3xl">
+                      <MediaImage
+                        objectKey={p.imageKey}
+                        alt=""
+                        className="h-full w-full object-cover"
+                        fallback={<span aria-hidden>{p.emoji}</span>}
+                      />
                     </span>
                     {p.popular ? (
                       <Badge tone="matcha" className="shrink-0">
@@ -586,9 +666,13 @@ export function PosModule() {
                       {p.name}
                     </span>
                     <span className="display block text-lg text-matcha-deep">
-                      {money(p.price)}
+                      {money(p.price, currency)}
                     </span>
-                    <span className="block truncate text-xs text-muted">{p.desc}</span>
+                    {p.desc ? (
+                      <span className="block truncate text-xs text-muted">
+                        {p.desc}
+                      </span>
+                    ) : null}
                   </span>
                 </button>
               ))}
@@ -603,10 +687,7 @@ export function PosModule() {
         {/* --------------------------- Ticket (escritorio) ------------------------- */}
         <div className="hidden self-start lg:sticky lg:top-24 lg:block">
           <Card>
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <h2 className="display text-2xl text-ink">Ticket</h2>
-              <DemoTag />
-            </div>
+            <h2 className="display mb-4 text-2xl text-ink">Ticket</h2>
             {ticketBody}
           </Card>
         </div>
@@ -622,18 +703,14 @@ export function PosModule() {
           <span className="text-sm font-extrabold">
             🧾 Ticket · {itemCount} {itemCount === 1 ? "artículo" : "artículos"}
           </span>
-          <span className="display text-lg">{money(total)}</span>
+          <span className="display text-lg">{money(total, currency)}</span>
         </button>
       ) : null}
 
       <Modal
         open={mobileTicketOpen}
         onClose={() => setMobileTicketOpen(false)}
-        title={
-          <span className="inline-flex items-center gap-2.5">
-            Ticket <DemoTag />
-          </span>
-        }
+        title="Ticket"
       >
         {ticketBody}
       </Modal>
@@ -646,7 +723,11 @@ export function PosModule() {
       >
         {draft && draftProduct ? (
           <div className="space-y-5">
-            <p className="-mt-2 text-sm leading-6 text-muted">{draftProduct.desc}</p>
+            {draftProduct.desc ? (
+              <p className="-mt-2 text-sm leading-6 text-muted">
+                {draftProduct.desc}
+              </p>
+            ) : null}
 
             <div className="flex items-center justify-between gap-3">
               <p className="eyebrow">Cantidad</p>
@@ -665,8 +746,10 @@ export function PosModule() {
                 </span>
                 <button
                   type="button"
-                  onClick={() => setDraft({ ...draft, qty: Math.min(9, draft.qty + 1) })}
-                  disabled={draft.qty >= 9}
+                  onClick={() =>
+                    setDraft({ ...draft, qty: Math.min(99, draft.qty + 1) })
+                  }
+                  disabled={draft.qty >= 99}
                   aria-label="Sumar una unidad"
                   className="focus-ring h-10 w-10 rounded-full border border-line text-lg font-extrabold text-ink transition hover:border-matcha disabled:cursor-not-allowed disabled:opacity-40"
                 >
@@ -678,20 +761,24 @@ export function PosModule() {
             {draftProduct.mods.milk ? (
               <div>
                 <p className="eyebrow">Leche</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {state.milks
-                    .filter((m) => m.available)
-                    .map((m) => (
+                {availableMilks.length ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {availableMilks.map((m) => (
                       <Chip
                         key={m.id}
                         active={draft.milkId === m.id}
                         onClick={() => setDraft({ ...draft, milkId: m.id })}
                       >
                         {m.name}
-                        {m.surcharge > 0 ? ` +${money(m.surcharge)}` : ""}
+                        {m.surcharge > 0 ? ` +${money(m.surcharge, currency)}` : ""}
                       </Chip>
                     ))}
-                </div>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-xs text-muted">
+                    No hay leches activas en la carta.
+                  </p>
+                )}
               </div>
             ) : null}
 
@@ -729,63 +816,63 @@ export function PosModule() {
               </div>
             ) : null}
 
-            {draftProduct.mods.extras ? (
+            {draftProduct.mods.extras && availableExtras.length ? (
               <div>
                 <p className="eyebrow">Extras</p>
                 <div className="mt-2 space-y-2">
-                  {state.extras
-                    .filter((e) => e.available)
-                    .map((e) => {
-                      const on = draft.extraIds.includes(e.id);
-                      return (
-                        <label
-                          key={e.id}
-                          className={cx(
-                            "flex cursor-pointer items-center justify-between gap-3 rounded-xl2 border px-3.5 py-2.5 text-sm font-bold text-ink transition",
-                            on
-                              ? "border-matcha bg-matcha-mist"
-                              : "border-line bg-white hover:border-matcha",
-                          )}
-                        >
-                          <span className="flex items-center gap-2.5">
-                            <input
-                              type="checkbox"
-                              checked={on}
-                              onChange={() =>
-                                setDraft({
-                                  ...draft,
-                                  extraIds: on
-                                    ? draft.extraIds.filter((id) => id !== e.id)
-                                    : [...draft.extraIds, e.id],
-                                })
-                              }
-                              className="h-4 w-4 accent-matcha-deep"
-                            />
-                            {e.name}
-                          </span>
-                          <span className="text-xs font-extrabold text-muted">
-                            +{money(e.price)}
-                          </span>
-                        </label>
-                      );
-                    })}
+                  {availableExtras.map((e) => {
+                    const on = draft.extraIds.includes(e.id);
+                    return (
+                      <label
+                        key={e.id}
+                        className={cx(
+                          "flex cursor-pointer items-center justify-between gap-3 rounded-xl2 border px-3.5 py-2.5 text-sm font-bold text-ink transition",
+                          on
+                            ? "border-matcha bg-matcha-mist"
+                            : "border-line bg-white hover:border-matcha",
+                        )}
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <input
+                            type="checkbox"
+                            checked={on}
+                            onChange={() =>
+                              setDraft({
+                                ...draft,
+                                extraIds: on
+                                  ? draft.extraIds.filter((id) => id !== e.id)
+                                  : [...draft.extraIds, e.id],
+                              })
+                            }
+                            className="h-4 w-4 accent-matcha-deep"
+                          />
+                          {e.name}
+                        </span>
+                        <span className="text-xs font-extrabold text-muted">
+                          +{money(e.price, currency)}
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
             ) : null}
 
             <div>
               <p className="eyebrow">Notas para barra</p>
-              <input
+              <Input
                 value={draft.notes}
                 onChange={(e) => setDraft({ ...draft, notes: e.target.value })}
                 placeholder="Ej. sin popote, nombre para el vaso…"
                 aria-label="Notas para barra"
-                className="focus-ring mt-2 w-full rounded-full border border-line bg-white px-4 py-2.5 text-sm text-ink placeholder:text-muted"
+                maxLength={200}
+                className="mt-2 rounded-full"
               />
             </div>
 
             <Button variant="matcha" className="w-full" onClick={confirmDraft}>
-              {draft.lineKey ? "Guardar" : "Agregar"} · {money(draftUnit * draft.qty)}
+              {draft.lineKey ? "Guardar" : "Agregar"} ·{" "}
+              {money(draftUnit * draft.qty, currency)}
             </Button>
           </div>
         ) : null}
@@ -806,16 +893,8 @@ export function PosModule() {
               Venta #{success.folio} registrada
             </p>
             <p className="display mt-2 text-3xl text-matcha-deep">
-              {money(success.total)}
+              {money(success.total, currency)}
             </p>
-            <p className="mt-2 text-sm text-muted">
-              Pago: {PAYMENT_META[success.payment].label}
-            </p>
-            {success.pointsEarned ? (
-              <p className="mt-1 text-sm text-muted">
-                {success.customerName} sumó {success.pointsEarned} puntos de lealtad.
-              </p>
-            ) : null}
             <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
               <Button variant="ghost" onClick={() => setSuccess(null)}>
                 Nueva venta
@@ -823,6 +902,7 @@ export function PosModule() {
               <Link
                 href="/comandas"
                 className="focus-ring inline-flex items-center justify-center gap-2 rounded-full bg-matcha-deep px-5 py-2.5 text-sm font-bold text-paper shadow-pop transition hover:bg-matcha"
+                onClick={() => notify("Comanda enviada a barra")}
               >
                 Ver comanda
               </Link>

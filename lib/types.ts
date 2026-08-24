@@ -1,8 +1,27 @@
+/* ============================================================================
+ * Tipos de dominio de TomoMatcha.
+ *
+ * Son la forma en que la aplicación (servidor y cliente) ve los datos; la capa
+ * `lib/data.ts` los construye a partir de las filas de Supabase.
+ * ========================================================================== */
+
 export type Role = "admin" | "empleado";
 
 export type CategoryId = "matcha" | "cafe" | "te" | "bakery";
 
 export type Unit = "g" | "ml" | "pza";
+
+export interface Staff {
+  id: string;
+  clerkUserId: string;
+  email: string | null;
+  fullName: string;
+  imageUrl: string | null;
+  role: Role;
+  active: boolean;
+  createdAt: string;
+  lastSeenAt: string | null;
+}
 
 export interface Ingredient {
   id: string;
@@ -10,12 +29,13 @@ export interface Ingredient {
   unit: Unit;
   stock: number;
   min: number;
-  /** Consumo típico semanal, solo informativo para la demo */
+  /** Consumo típico semanal, referencia para resurtir */
   weeklyUse: number;
+  active: boolean;
 }
 
 export interface RecipeItem {
-  /** `"milk"` se resuelve al ingrediente de la leche elegida en el POS */
+  /** `"milk"` se resuelve con la leche que elige el cliente en el punto de venta */
   ingredientId: string | "milk";
   qty: number;
 }
@@ -34,8 +54,10 @@ export interface Product {
   price: number;
   desc: string;
   emoji: string;
+  imageKey: string | null;
   active: boolean;
-  popular?: boolean;
+  popular: boolean;
+  sortOrder: number;
   recipe: RecipeItem[];
   mods: ModifierSupport;
 }
@@ -46,6 +68,7 @@ export interface MilkOption {
   surcharge: number;
   ingredientId: string | null;
   available: boolean;
+  sortOrder: number;
 }
 
 export interface ExtraOption {
@@ -54,31 +77,47 @@ export interface ExtraOption {
   price: number;
   recipe: RecipeItem[];
   available: boolean;
+  sortOrder: number;
 }
 
 export type Sweetness = 0 | 25 | 50 | 75 | 100;
 export type Temperature = "caliente" | "frio";
 
+export interface OrderExtraSnapshot {
+  id: string;
+  name: string;
+  price: number;
+}
+
 export interface LineModifiers {
   milkId?: string;
+  /** Nombre de la leche al momento de la venta (el histórico no cambia después) */
+  milkName?: string;
   sweetness?: Sweetness;
   temperature?: Temperature;
   extraIds: string[];
+  extras?: OrderExtraSnapshot[];
   notes?: string;
 }
 
 export interface OrderItem {
-  productId: string;
+  productId: string | null;
   name: string;
   emoji: string;
+  imageKey: string | null;
   qty: number;
   unitPrice: number;
-  /** Cargo adicional por leche/extras, por unidad */
+  /** Cargo adicional por leche y extras, por unidad */
   modsPrice: number;
   modifiers: LineModifiers;
 }
 
-export type OrderStatus = "nuevo" | "preparando" | "listo" | "entregado";
+export type OrderStatus =
+  | "nuevo"
+  | "preparando"
+  | "listo"
+  | "entregado"
+  | "cancelado";
 
 export type PaymentMethod = "efectivo" | "tarjeta" | "mercadopago";
 
@@ -97,6 +136,7 @@ export interface Order {
   customerId?: string;
   customerName?: string;
   pointsEarned?: number;
+  createdByName?: string;
 }
 
 export interface Customer {
@@ -104,10 +144,12 @@ export interface Customer {
   name: string;
   phone: string;
   email: string;
+  notes: string;
   points: number;
   visits: number;
+  cardToken: string;
   since: string;
-  lastVisit: string;
+  lastVisit: string | null;
 }
 
 export interface CashClose {
@@ -130,19 +172,32 @@ export interface FeatureFlags {
   mercadoPago: boolean;
 }
 
-export interface Review {
-  id: string;
-  author: string;
-  rating: number;
-  text: string;
-  date: string;
+export interface Settings {
+  businessName: string;
+  branchName: string;
+  timezone: string;
+  currency: string;
+  logoKey: string | null;
+  cashFloat: number;
+  pointsPerCurrency: number;
+  rewardCost: number;
+  googleReviewUrl: string | null;
+  googleRating: number | null;
+  googleReviewsCount: number | null;
+  catalogSeededAt: string | null;
 }
 
-export interface DemoState {
-  version: number;
-  seededAt: string;
+/** Todo lo que la aplicación necesita para pintar cualquier módulo. */
+export interface AppState {
+  /** Momento en que el servidor construyó este estado */
+  loadedAt: string;
+  /** Día operativo (YYYY-MM-DD) en la zona horaria del negocio */
+  todayKey: string;
+  me: Staff;
   role: Role;
+  settings: Settings;
   flags: FeatureFlags;
+  staff: Staff[];
   products: Product[];
   ingredients: Ingredient[];
   milks: MilkOption[];
@@ -150,8 +205,8 @@ export interface DemoState {
   orders: Order[];
   customers: Customer[];
   cashCloses: CashClose[];
-  reviews: Review[];
-  nextFolio: number;
+  /** Configuración de infraestructura visible para la interfaz */
+  media: { configured: boolean; publicBase: string | null };
 }
 
 export interface CartLine {
@@ -167,6 +222,7 @@ export interface CheckoutPayload {
   discountLabel?: string;
   payment: PaymentMethod;
   customerId?: string;
+  cashReceived?: number;
 }
 
 export const CATEGORY_META: Record<
@@ -179,6 +235,15 @@ export const CATEGORY_META: Record<
   bakery: { label: "Bakery", emoji: "🥐" },
 };
 
+export const CATEGORY_IDS = Object.keys(CATEGORY_META) as CategoryId[];
+
+export const UNIT_LABELS: Record<Unit, string> = {
+  g: "gramos",
+  ml: "mililitros",
+  pza: "piezas",
+};
+
+/** Estados por los que avanza una comanda en la barra. */
 export const ORDER_FLOW: OrderStatus[] = [
   "nuevo",
   "preparando",
@@ -194,19 +259,23 @@ export const STATUS_META: Record<
   preparando: { label: "En preparación", action: "Marcar listo" },
   listo: { label: "Listo", action: "Entregar" },
   entregado: { label: "Entregado", action: "" },
+  cancelado: { label: "Cancelado", action: "" },
 };
 
-export const PAYMENT_META: Record<PaymentMethod, { label: string; short: string }> = {
+export const PAYMENT_META: Record<
+  PaymentMethod,
+  { label: string; short: string }
+> = {
   efectivo: { label: "Efectivo", short: "Efectivo" },
-  tarjeta: { label: "Tarjeta (demo)", short: "Tarjeta" },
-  mercadopago: { label: "Mercado Pago · simulado", short: "Mercado Pago" },
+  tarjeta: { label: "Tarjeta", short: "Tarjeta" },
+  mercadopago: { label: "Mercado Pago", short: "Mercado Pago" },
 };
 
 export const SWEETNESS_STEPS: Sweetness[] = [0, 25, 50, 75, 100];
 
-/** Puntos de lealtad ganados por compra: 1 punto por peso */
-export function pointsFor(total: number): number {
-  return Math.round(total);
+/** Puntos de lealtad ganados por una compra. */
+export function pointsFor(total: number, pointsPerCurrency = 1): number {
+  return Math.round(total * pointsPerCurrency);
 }
 
 export function loyaltyTier(points: number): {

@@ -62,7 +62,3 @@ body {
   }
 }
 
-/* Fake QR pattern cell — pure decoration, explicitly a demo visual */
-.qr-cell {
-  fill: var(--ink);
-}

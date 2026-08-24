@@ -1,8 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { ReactNode, useEffect } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useStore } from "@/lib/store";
+import { mediaUrl } from "@/lib/media";
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
@@ -26,9 +33,13 @@ export function PageHeader({
       <div className="min-w-0">
         <p className="eyebrow">{eyebrow}</p>
         <h1 className="display mt-1 text-3xl text-ink md:text-4xl">{title}</h1>
-        {desc ? <p className="mt-2 max-w-xl text-sm leading-6 text-muted">{desc}</p> : null}
+        {desc ? (
+          <p className="mt-2 max-w-xl text-sm leading-6 text-muted">{desc}</p>
+        ) : null}
       </div>
-      {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+      {actions ? (
+        <div className="flex flex-wrap items-center gap-2">{actions}</div>
+      ) : null}
     </div>
   );
 }
@@ -44,11 +55,13 @@ export function Button({
   variant = "primary",
   size = "md",
   className,
+  type = "button",
   ...props
 }: ButtonProps) {
   return (
     <button
       {...props}
+      type={type}
       className={cx(
         "focus-ring inline-flex items-center justify-center gap-2 rounded-full font-bold transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40",
         size === "sm" && "px-3.5 py-1.5 text-xs",
@@ -89,15 +102,6 @@ export function Badge({
       )}
     >
       {children}
-    </span>
-  );
-}
-
-export function DemoTag({ label = "Demo" }: { label?: string }) {
-  return (
-    <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-matcha/50 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.14em] text-matcha-deep">
-      <span className="h-1.5 w-1.5 animate-pulseDot rounded-full bg-matcha" aria-hidden />
-      {label}
     </span>
   );
 }
@@ -179,6 +183,53 @@ export function Toggle({
   );
 }
 
+/* -------------------------------- Formularios -------------------------------- */
+
+export function Field({
+  label,
+  hint,
+  error,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  error?: string;
+  children: ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-muted">
+        {label}
+      </span>
+      <span className="mt-1.5 block">{children}</span>
+      {error ? (
+        <span className="mt-1 block text-xs font-bold text-danger">{error}</span>
+      ) : hint ? (
+        <span className="mt-1 block text-xs leading-5 text-muted">{hint}</span>
+      ) : null}
+    </label>
+  );
+}
+
+const inputBase =
+  "focus-ring w-full rounded-xl2 border border-line bg-white px-4 py-2.5 text-sm font-medium text-ink placeholder:font-normal placeholder:text-muted/70 disabled:opacity-50";
+
+export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
+  return <input {...props} className={cx(inputBase, props.className)} />;
+}
+
+export function Textarea(
+  props: React.TextareaHTMLAttributes<HTMLTextAreaElement>,
+) {
+  return (
+    <textarea {...props} className={cx(inputBase, "leading-6", props.className)} />
+  );
+}
+
+export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  return <select {...props} className={cx(inputBase, "pr-9", props.className)} />;
+}
+
 /* ------------------------------ Estados vacíos -------------------------------- */
 
 export function EmptyState({
@@ -198,32 +249,37 @@ export function EmptyState({
         {emoji}
       </span>
       <p className="display mt-4 text-xl text-ink">{title}</p>
-      {desc ? <p className="mt-2 max-w-sm text-sm leading-6 text-muted">{desc}</p> : null}
+      {desc ? (
+        <p className="mt-2 max-w-sm text-sm leading-6 text-muted">{desc}</p>
+      ) : null}
       {action ? <div className="mt-5">{action}</div> : null}
     </div>
   );
 }
 
-/* ------------------------ Acceso restringido / flags -------------------------- */
+/* ------------------------ Acceso restringido / módulos ------------------------ */
 
 export function AccessGate({ module }: { module: string }) {
-  const { setRole } = useStore();
   return (
     <div className="mx-auto max-w-xl py-16 text-center">
       <span className="text-4xl" aria-hidden>
         🔒
       </span>
-      <p className="eyebrow mt-5">Acceso restringido · demo</p>
+      <p className="eyebrow mt-5">Acceso restringido</p>
       <h1 className="display mt-2 text-3xl text-ink">
         {module} es solo para administración
       </h1>
       <p className="mx-auto mt-4 max-w-md text-sm leading-6 text-muted">
-        El perfil <strong>Empleado</strong> puede operar Punto de venta y Comandas.
-        En la demo puedes cambiar de perfil aquí mismo para explorar todo.
+        Tu cuenta tiene perfil de <strong>empleado</strong>, con acceso a Punto
+        de venta y Comandas. Si necesitas entrar aquí, pídele a un administrador
+        que te cambie el rol en Ajustes.
       </p>
-      <Button variant="matcha" className="mt-6" onClick={() => setRole("admin")}>
-        Cambiar a Administrador
-      </Button>
+      <Link
+        href="/pos"
+        className="focus-ring mt-6 inline-flex items-center rounded-full bg-matcha-deep px-5 py-2.5 text-sm font-bold text-paper shadow-pop hover:bg-matcha"
+      >
+        Ir al punto de venta
+      </Link>
     </div>
   );
 }
@@ -240,11 +296,11 @@ export function FlagGate({
       <span className="text-4xl" aria-hidden>
         🌙
       </span>
-      <p className="eyebrow mt-5">Módulo apagado por configuración</p>
+      <p className="eyebrow mt-5">Módulo apagado</p>
       <h1 className="display mt-2 text-3xl text-ink">{module} está desactivado</h1>
       <p className="mx-auto mt-4 max-w-md text-sm leading-6 text-muted">
         {detail ??
-          "Un administrador apagó este módulo desde Ajustes. Todo es local y de demostración; vuelve a encenderlo cuando quieras."}
+          "Un administrador apagó este módulo desde Ajustes. Vuelve a encenderlo cuando lo necesites."}
       </p>
       <Link
         href="/ajustes"
@@ -299,18 +355,86 @@ export function Modal({
         <div className="mb-4 flex items-start justify-between gap-4">
           <h2 className="display text-2xl text-ink">{title}</h2>
           <button
+            type="button"
             onClick={onClose}
             aria-label="Cerrar"
             className="focus-ring -mr-1 -mt-1 rounded-full p-2 text-muted hover:bg-cream hover:text-ink"
           >
             <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden>
-              <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              <path
+                d="M5 5l10 10M15 5L5 15"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
             </svg>
           </button>
         </div>
         {children}
       </div>
     </div>
+  );
+}
+
+/** Confirmación para acciones que no se pueden deshacer. */
+export function ConfirmButton({
+  label,
+  confirmLabel,
+  question,
+  onConfirm,
+  variant = "danger",
+  size = "sm",
+  disabled,
+}: {
+  label: string;
+  confirmLabel?: string;
+  question?: string;
+  onConfirm: () => void;
+  variant?: ButtonProps["variant"];
+  size?: ButtonProps["size"];
+  disabled?: boolean;
+}) {
+  const [armed, setArmed] = useState(false);
+
+  useEffect(() => {
+    if (!armed) return;
+    const timer = window.setTimeout(() => setArmed(false), 6000);
+    return () => window.clearTimeout(timer);
+  }, [armed]);
+
+  if (!armed) {
+    return (
+      <Button
+        variant={variant}
+        size={size}
+        disabled={disabled}
+        onClick={() => setArmed(true)}
+      >
+        {label}
+      </Button>
+    );
+  }
+
+  return (
+    <span className="inline-flex flex-wrap items-center gap-2">
+      {question ? (
+        <span className="text-xs font-bold text-danger">{question}</span>
+      ) : null}
+      <Button
+        variant="danger"
+        size={size}
+        disabled={disabled}
+        onClick={() => {
+          setArmed(false);
+          onConfirm();
+        }}
+      >
+        {confirmLabel ?? "Sí, confirmar"}
+      </Button>
+      <Button variant="ghost" size={size} onClick={() => setArmed(false)}>
+        Cancelar
+      </Button>
+    </span>
   );
 }
 
@@ -330,12 +454,17 @@ export function ToastViewport() {
             "animate-toastIn pointer-events-auto w-full rounded-xl2 border px-4 py-3 shadow-lift",
             t.tone === "ok"
               ? "border-matcha/40 bg-ink text-paper"
-              : "border-amber/40 bg-amber/10 text-ink backdrop-blur",
+              : "border-amber/50 bg-paper text-ink",
           )}
         >
           <p className="text-sm font-extrabold">{t.title}</p>
           {t.detail ? (
-            <p className={cx("mt-0.5 text-xs", t.tone === "ok" ? "text-paper/70" : "text-muted")}>
+            <p
+              className={cx(
+                "mt-0.5 text-xs leading-5",
+                t.tone === "ok" ? "text-paper/70" : "text-muted",
+              )}
+            >
               {t.detail}
             </p>
           ) : null}
@@ -345,51 +474,139 @@ export function ToastViewport() {
   );
 }
 
-/* -------------------------------- Fake QR ------------------------------------- */
+/* ----------------------------------- QR -------------------------------------- */
 
-/** QR decorativo de demostración (no escaneable), determinista por semilla. */
-export function FakeQr({ seed, className }: { seed: string; className?: string }) {
-  const n = 17;
-  let h = 2166136261;
-  for (let i = 0; i < seed.length; i++) {
-    h ^= seed.charCodeAt(i);
-    h = Math.imul(h, 16777619);
+/**
+ * Código QR real y escaneable. Se genera en el servidor (`/api/qr`) para que
+ * imprima nítido y no dependa de JavaScript del navegador. Si la petición
+ * falla, se muestra un aviso en lugar de una imagen rota.
+ */
+export function QrCode({
+  value,
+  className,
+  alt,
+}: {
+  value: string;
+  className?: string;
+  alt: string;
+}) {
+  const [failed, setFailed] = useState(false);
+
+  if (failed) {
+    return (
+      <span
+        className={cx(
+          "grid place-items-center rounded-xl2 border border-dashed border-line p-3 text-center text-[10px] leading-4 text-muted",
+          className,
+        )}
+      >
+        No se pudo generar el código. Vuelve a cargar la página.
+      </span>
+    );
   }
-  const cells: boolean[] = [];
-  for (let i = 0; i < n * n; i++) {
-    h ^= h << 13;
-    h ^= h >>> 17;
-    h ^= h << 5;
-    cells.push(((h >>> 0) & 3) === 0 ? false : ((h >>> 2) & 1) === 1);
-  }
-  const finder = (x: number, y: number) => (
-    <g key={`${x}-${y}`}>
-      <rect x={x} y={y} width={5} height={5} className="qr-cell" />
-      <rect x={x + 1} y={y + 1} width={3} height={3} fill="white" />
-      <rect x={x + 2} y={y + 2} width={1} height={1} className="qr-cell" />
-    </g>
-  );
+
   return (
-    <svg
-      viewBox={`0 0 ${n} ${n}`}
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={`/api/qr?value=${encodeURIComponent(value)}`}
+      alt={alt}
       className={className}
-      role="img"
-      aria-label="Código QR de demostración (no escaneable)"
-      shapeRendering="crispEdges"
-    >
-      <rect width={n} height={n} fill="white" />
-      {cells.map((on, i) => {
-        const x = i % n;
-        const y = Math.floor(i / n);
-        const inFinder =
-          (x < 7 && y < 7) || (x >= n - 7 && y < 7) || (x < 7 && y >= n - 7);
-        return on && !inFinder ? (
-          <rect key={i} x={x} y={y} width={1} height={1} className="qr-cell" />
-        ) : null;
-      })}
-      {finder(1, 1)}
-      {finder(n - 6, 1)}
-      {finder(1, n - 6)}
-    </svg>
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+/* ------------------------------ Imagen de media ------------------------------- */
+
+export function MediaImage({
+  objectKey,
+  alt,
+  className,
+  fallback,
+}: {
+  objectKey: string | null;
+  alt: string;
+  className?: string;
+  fallback?: ReactNode;
+}) {
+  const { state } = useStore();
+  const [broken, setBroken] = useState(false);
+  const url = mediaUrl(objectKey, state.media.publicBase);
+
+  if (!url || broken) return <>{fallback ?? null}</>;
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={url}
+      alt={alt}
+      className={className}
+      loading="lazy"
+      onError={() => setBroken(true)}
+    />
+  );
+}
+
+/** Selector de archivo que sube a R2 y avisa del resultado. */
+export function ImageUpload({
+  target,
+  label = "Subir imagen",
+  accept = "image/*",
+  compact,
+}: {
+  target: { purpose: "producto"; productId: string } | { purpose: "logo" };
+  label?: string;
+  accept?: string;
+  compact?: boolean;
+}) {
+  const { state, uploadMedia, notify } = useStore();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const inputId = useId();
+
+  if (!state.media.configured) {
+    return (
+      <p className="text-xs leading-5 text-muted">
+        Para subir imágenes falta configurar Cloudflare R2 (ver{" "}
+        <code className="rounded bg-cream px-1 py-0.5 text-[11px]">
+          INSTRUCCIONES.md
+        </code>
+        ).
+      </p>
+    );
+  }
+
+  const pick = async (file: File | undefined) => {
+    if (!file) return;
+    if (file.size > 25 * 1024 * 1024) {
+      notify("Archivo demasiado grande", "El límite es 25 MB.", "warn");
+      return;
+    }
+    setUploading(true);
+    await uploadMedia(file, target);
+    setUploading(false);
+    if (inputRef.current) inputRef.current.value = "";
+  };
+
+  return (
+    <span className="inline-flex items-center gap-2">
+      <input
+        ref={inputRef}
+        id={inputId}
+        type="file"
+        accept={accept}
+        className="sr-only"
+        onChange={(e) => void pick(e.target.files?.[0])}
+      />
+      <Button
+        variant="ghost"
+        size={compact ? "sm" : "md"}
+        disabled={uploading}
+        onClick={() => inputRef.current?.click()}
+      >
+        {uploading ? "Subiendo…" : label}
+      </Button>
+    </span>
   );
 }
