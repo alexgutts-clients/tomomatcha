@@ -26,6 +26,7 @@ export type OrderStatusDb =
   | "entregado"
   | "cancelado";
 export type PaymentDb = "efectivo" | "tarjeta" | "mercadopago";
+export type ServiceModeDb = "aqui" | "llevar";
 export type MovementReasonDb =
   | "venta"
   | "ajuste"
@@ -77,6 +78,10 @@ export type IngredientRow = {
   min_stock: number;
   weekly_use: number;
   active: boolean;
+  /** Vasos, tapas, servilletas: solo se gastan en pedidos para llevar */
+  is_packaging: boolean;
+  /** Nivel objetivo de resurtido; permite fijar el umbral como porcentaje */
+  par_level: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -161,6 +166,7 @@ export type OrderRow = {
   total: number;
   payment: PaymentDb;
   status: OrderStatusDb;
+  service_mode: ServiceModeDb;
   cash_received: number | null;
   customer_id: string | null;
   customer_name: string | null;
@@ -224,6 +230,22 @@ export type CashCloseRow = {
   created_at: string;
 }
 
+export type PreparedItemRow = {
+  id: string;
+  name: string;
+  qty: number;
+  unit: UnitDb;
+  produced_on: string;
+  expires_on: string;
+  notes: string | null;
+  acknowledged_at: string | null;
+  acknowledged_by: string | null;
+  discarded_at: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type MediaAssetRow = {
   id: string;
   object_key: string;
@@ -273,6 +295,7 @@ export type Database = {
       >;
       cash_closes: Table<CashCloseRow, "date_key">;
       media_assets: Table<MediaAssetRow, "object_key">;
+      prepared_items: Table<PreparedItemRow, "name" | "expires_on">;
     };
     Views: { [_ in never]: never };
     Functions: {
@@ -315,6 +338,7 @@ export type Database = {
     };
     Enums: {
       staff_role: StaffRoleDb;
+      service_mode: ServiceModeDb;
       unit_type: UnitDb;
       category_id: CategoryDb;
       order_status: OrderStatusDb;

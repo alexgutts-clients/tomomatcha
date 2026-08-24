@@ -22,6 +22,7 @@ import {
   type Customer,
   type OrderStatus,
   type PaymentMethod,
+  type ServiceMode,
 } from "./types";
 
 /* ============================================================================
@@ -42,6 +43,7 @@ export async function refreshState(): Promise<ActionResult<undefined>> {
 /* -------------------------------- Punto de venta ----------------------------- */
 
 const PAYMENTS: PaymentMethod[] = ["efectivo", "tarjeta", "mercadopago"];
+const SERVICE_MODES: ServiceMode[] = ["aqui", "llevar"];
 const TEMPERATURES = ["caliente", "frio"] as const;
 const SWEETNESS = [0, 25, 50, 75, 100];
 
@@ -88,6 +90,11 @@ export async function checkout(
         }),
         discountLabel: optText(payload.discountLabel, 80),
         payment: oneOf(payload.payment, PAYMENTS, "El método de pago"),
+        serviceMode: oneOf(
+          payload.serviceMode ?? "llevar",
+          SERVICE_MODES,
+          "El modo de servicio",
+        ),
         customerId: payload.customerId
           ? reqId(payload.customerId, "El cliente")
           : null,
@@ -202,6 +209,36 @@ export async function adjustStock(
   });
 }
 
+/**
+ * Entrada de mercancía: suma una cantidad escrita a mano.
+ *
+ * El cliente pidió esto expresamente: cuando llegan 200 vasos no tiene sentido
+ * picarle 200 veces al botón de +.
+ */
+export async function receiveStock(
+  ingredientId: string,
+  amount: number,
+  note?: string,
+): Promise<ActionResult<number>> {
+  return run(requireAdmin, async (staff) => {
+    const value = reqNumber(amount, "La cantidad recibida", {
+      min: 0.001,
+      max: 1_000_000,
+    });
+
+    const { data, error } = await db().rpc("adjust_stock", {
+      p_ingredient_id: reqId(ingredientId, "El insumo"),
+      p_delta: value,
+      p_reason: "entrada",
+      p_staff_id: staff.id,
+      p_note: optText(note, 200) ?? "Entrada de mercancía",
+    });
+
+    if (error) throw new Error(error.message);
+    return num(data);
+  });
+}
+
 /** Fija el stock a una cantidad contada, registrando la diferencia. */
 export async function setStock(
   ingredientId: string,
@@ -241,8 +278,13 @@ export interface IngredientInput {
   id?: string;
   name: string;
   unit: "g" | "ml" | "pza";
+  /** Umbral de alerta, en la unidad del insumo */
   min: number;
   weeklyUse: number;
+  /** Vasos, tapas y demás desechables: solo se gastan en pedidos para llevar */
+  isPackaging: boolean;
+  /** Nivel objetivo de resurtido; deja leer el umbral como porcentaje */
+  parLevel?: number | null;
   /** Sólo al crear: existencia inicial */
   stock?: number;
 }
@@ -255,8 +297,13 @@ export async function saveIngredient(
     const patch = {
       name: reqText(input.name, "El nombre del insumo", 120),
       unit: oneOf(input.unit, ["g", "ml", "pza"] as const, "La unidad"),
-      min_stock: reqNumber(input.min, "El mínimo", { min: 0 }),
+      min_stock: reqNumber(input.min, "El umbral de alerta", { min: 0 }),
       weekly_use: reqNumber(input.weeklyUse ?? 0, "El uso semanal", { min: 0 }),
+      is_packaging: !!input.isPackaging,
+      par_level:
+        input.parLevel === null || input.parLevel === undefined
+          ? null
+          : reqNumber(input.parLevel, "El nivel objetivo", { min: 0 }),
     };
 
     if (input.id) {
@@ -327,6 +374,12 @@ export async function deleteIngredient(
 
 /* ---------------------------------- Clientes -------------------------------- */
 
+/*
+ * El módulo de Clientes es sólo para administradores, así que estas acciones
+ * exigen lo mismo. Al cobrar sí se puede elegir a un cliente y sumar puntos:
+ * eso ocurre dentro de `create_order`, que un empleado sí puede ejecutar.
+ */
+
 export interface CustomerInput {
   id?: string;
   name: string;
@@ -338,7 +391,7 @@ export interface CustomerInput {
 export async function saveCustomer(
   input: CustomerInput,
 ): Promise<ActionResult<string>> {
-  return run(requireStaff, async () => {
+  return run(requireAdmin, async () => {
     const email = optText(input.email, 160);
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
       throw new ValidationError("El correo no tiene un formato válido.");
@@ -395,7 +448,7 @@ export async function addPoints(
   points: number,
   reason: string,
 ): Promise<ActionResult<number>> {
-  return run(requireStaff, async (staff) => {
+  return run(requireAdmin, async (staff) => {
     const { data, error } = await db().rpc("adjust_points", {
       p_customer_id: reqId(customerId, "El cliente"),
       p_points: Math.round(
@@ -414,7 +467,7 @@ export async function redeemReward(
   cost: number,
   label: string,
 ): Promise<ActionResult<number>> {
-  return run(requireStaff, async (staff) => {
+  return run(requireAdmin, async (staff) => {
     const id = reqId(customerId, "El cliente");
     const amount = Math.round(reqNumber(cost, "El costo", { min: 1, max: 100_000 }));
 
@@ -507,6 +560,107 @@ export async function reopenCash(): Promise<ActionResult<undefined>> {
       .from("cash_closes")
       .delete()
       .eq("date_key", today);
+    if (error) throw new Error(error.message);
+    return undefined;
+  });
+}
+
+/* --------------------------- Productos preparados ---------------------------- */
+
+export interface PreparedItemInput {
+  id?: string;
+  name: string;
+  qty: number;
+  unit: "g" | "ml" | "pza";
+  producedOn: string;
+  expiresOn: string;
+  notes?: string;
+}
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function reqDate(value: unknown, label: string): string {
+  const text = reqText(value, label, 10);
+  if (!DATE_RE.test(text) || Number.isNaN(Date.parse(`${text}T12:00:00Z`))) {
+    throw new ValidationError(`${label} no es una fecha válida (AAAA-MM-DD).`);
+  }
+  return text;
+}
+
+/** Alta o edición de un lote elaborado en casa (mermelada, jarabe, pastel…). */
+export async function savePreparedItem(
+  input: PreparedItemInput,
+): Promise<ActionResult<string>> {
+  return run(requireAdmin, async (staff) => {
+    const producedOn = reqDate(input.producedOn, "La fecha de elaboración");
+    const expiresOn = reqDate(input.expiresOn, "La fecha de caducidad");
+    if (expiresOn < producedOn) {
+      throw new ValidationError(
+        "La caducidad no puede ser anterior a la elaboración.",
+      );
+    }
+
+    const patch = {
+      name: reqText(input.name, "El nombre", 120),
+      qty: reqNumber(input.qty ?? 0, "La cantidad", { min: 0, max: 100_000 }),
+      unit: oneOf(input.unit, ["g", "ml", "pza"] as const, "La unidad"),
+      produced_on: producedOn,
+      expires_on: expiresOn,
+      notes: optText(input.notes, 400),
+    };
+
+    const supabase = db();
+    if (input.id) {
+      const id = reqId(input.id, "El producto preparado");
+      // Al mover la caducidad, la alerta atendida vuelve a contar desde cero.
+      const { error } = await supabase
+        .from("prepared_items")
+        .update({ ...patch, acknowledged_at: null, acknowledged_by: null })
+        .eq("id", id);
+      if (error) throw new Error(error.message);
+      return id;
+    }
+
+    const { data, error } = await supabase
+      .from("prepared_items")
+      .insert({ ...patch, created_by: staff.id })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    return data!.id;
+  });
+}
+
+/**
+ * Marca la alerta como atendida. La alerta del último día no desaparece sola:
+ * sigue en rojo hasta que alguien la revisa, que fue justo lo que pidió el
+ * cliente para no perder de vista un lote a punto de vencer.
+ */
+export async function acknowledgePreparedItem(
+  itemId: string,
+): Promise<ActionResult<undefined>> {
+  return run(requireAdmin, async (staff) => {
+    const { error } = await db()
+      .from("prepared_items")
+      .update({
+        acknowledged_at: new Date().toISOString(),
+        acknowledged_by: staff.id,
+      })
+      .eq("id", reqId(itemId, "El producto preparado"));
+    if (error) throw new Error(error.message);
+    return undefined;
+  });
+}
+
+/** Se acabó o se tiró: sale de la lista pero queda el registro. */
+export async function discardPreparedItem(
+  itemId: string,
+): Promise<ActionResult<undefined>> {
+  return run(requireAdmin, async () => {
+    const { error } = await db()
+      .from("prepared_items")
+      .update({ discarded_at: new Date().toISOString() })
+      .eq("id", reqId(itemId, "El producto preparado"));
     if (error) throw new Error(error.message);
     return undefined;
   });

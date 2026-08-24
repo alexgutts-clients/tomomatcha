@@ -6,6 +6,7 @@ import { useState, type ReactNode } from "react";
 import { UserButton } from "@clerk/nextjs";
 import { useDerived, useStore } from "@/lib/store";
 import { longDate } from "@/lib/format";
+import { daysUntil } from "@/lib/types";
 import { Icons, type IconName } from "./icons";
 import { Badge, Modal, ToastViewport, cx } from "./ui";
 
@@ -23,6 +24,7 @@ const NAV: NavItem[] = [
   { href: "/pos", label: "Punto de venta", short: "Venta", icon: "pos", employee: true },
   { href: "/comandas", label: "Comandas", short: "Comandas", icon: "comandas", employee: true },
   { href: "/inventario", label: "Inventario", short: "Insumos", icon: "inventario", employee: false },
+  { href: "/preparados", label: "Productos preparados", short: "Preparados", icon: "preparados", employee: false },
   { href: "/productos", label: "Productos", short: "Productos", icon: "productos", employee: false },
   { href: "/reportes", label: "Reportes", short: "Reportes", icon: "reportes", employee: false },
   { href: "/clientes", label: "Clientes y lealtad", short: "Clientes", icon: "clientes", employee: false },
@@ -38,6 +40,11 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const isEmployee = state.role === "empleado";
   const pendingStaff = state.staff.filter((s) => !s.active).length;
+  // Lotes que caducan hoy o mañana y todavía nadie ha revisado.
+  const expiringSoon = state.preparedItems.filter(
+    (item) =>
+      !item.acknowledgedAt && daysUntil(item.expiresOn, state.todayKey) <= 1,
+  ).length;
 
   const badgeFor = (item: NavItem) => {
     if (item.href === "/comandas" && activeOrders.length > 0) {
@@ -50,6 +57,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     ) {
       return String(lowStock.length);
     }
+    if (item.href === "/preparados" && expiringSoon > 0) return String(expiringSoon);
     if (item.href === "/ajustes" && pendingStaff > 0) return String(pendingStaff);
     return null;
   };

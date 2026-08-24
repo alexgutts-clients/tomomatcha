@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useDerived, useStore } from "@/lib/store";
 import { money, shortDate, time, weekday } from "@/lib/format";
-import { STATUS_META } from "@/lib/types";
+import { STATUS_META, daysUntil, expiryLevel } from "@/lib/types";
 import { Icons } from "@/components/icons";
 import {
   AccessGate,
@@ -44,6 +44,13 @@ export function DashboardModule() {
     : 0;
 
   const catalogEmpty = state.products.length === 0;
+
+  // Lotes de cocina que caducan hoy o mañana y nadie ha revisado.
+  const expiring = state.preparedItems
+    .map((item) => ({ item, days: daysUntil(item.expiresOn, state.todayKey) }))
+    .filter(({ days }) => expiryLevel(days) === "critico" || days < 0)
+    .sort((a, b) => a.days - b.days);
+  const unattended = expiring.filter(({ item }) => !item.acknowledgedAt);
 
   return (
     <div className="space-y-6">
@@ -306,6 +313,46 @@ export function DashboardModule() {
                   para que cada venta descuente solo.
                 </p>
               )}
+            </Card>
+          ) : null}
+
+          {/* ---------------------------- Caducidades ---------------------------- */}
+          {expiring.length ? (
+            <Card className={cx(unattended.length > 0 && "border-danger/40")}>
+              <div className="flex items-center justify-between">
+                <p className="eyebrow">Preparados por vencer</p>
+                <Link
+                  href="/preparados"
+                  className="focus-ring text-xs font-extrabold text-matcha-deep hover:underline"
+                >
+                  Ver todos
+                </Link>
+              </div>
+              <ul className="mt-3 space-y-2">
+                {expiring.slice(0, 4).map(({ item, days }) => (
+                  <li
+                    key={item.id}
+                    className="flex items-center justify-between gap-3 text-sm"
+                  >
+                    <span className="min-w-0 truncate font-bold text-ink">
+                      {item.name}
+                    </span>
+                    <Badge tone="danger">
+                      {days < 0
+                        ? "Caducado"
+                        : days === 0
+                          ? "Hoy"
+                          : "Mañana"}
+                    </Badge>
+                  </li>
+                ))}
+              </ul>
+              {unattended.length ? (
+                <p className="mt-3 text-xs font-bold leading-5 text-danger">
+                  {unattended.length} sin revisar. El aviso sigue hasta que los
+                  atiendas.
+                </p>
+              ) : null}
             </Card>
           ) : null}
 

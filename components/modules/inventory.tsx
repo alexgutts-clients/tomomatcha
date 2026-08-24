@@ -1,16 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   adjustStock,
   deleteIngredient,
+  receiveStock,
   saveIngredient,
   setStock,
   type IngredientInput,
 } from "@/lib/actions";
+import { saveProduct } from "@/lib/actions-admin";
 import { useDerived, useStore } from "@/lib/store";
 import { unitLabel } from "@/lib/format";
-import { UNIT_LABELS, type Ingredient, type Unit } from "@/lib/types";
+import {
+  stockLevel,
+  thresholdPct,
+  UNIT_LABELS,
+  type Ingredient,
+  type StockLevel,
+  type Unit,
+} from "@/lib/types";
 import {
   AccessGate,
   Badge,
@@ -25,13 +34,13 @@ import {
   PageHeader,
   Select,
   Stat,
+  Toggle,
   cx,
 } from "@/components/ui";
 
 /* ------------------------------- Utilidades ---------------------------------- */
 
 type StockFilter = "todos" | "alerta" | "ok";
-type StockLevel = "critico" | "resurtir" | "ok";
 
 const STEP: Record<Unit, number> = { g: 25, ml: 250, pza: 1 };
 
@@ -50,12 +59,6 @@ const FILTERS: { id: StockFilter; label: string }[] = [
   { id: "ok", label: "Correctos" },
 ];
 
-function levelFor(ing: Ingredient): StockLevel {
-  if (ing.min > 0 && ing.stock <= ing.min * 0.5) return "critico";
-  if (ing.stock <= ing.min) return "resurtir";
-  return "ok";
-}
-
 function ratioFor(ing: Ingredient): number {
   return ing.stock / Math.max(ing.min, 1);
 }
@@ -65,6 +68,8 @@ const EMPTY_FORM: IngredientInput = {
   unit: "g",
   min: 0,
   weeklyUse: 0,
+  isPackaging: false,
+  parLevel: null,
   stock: 0,
 };
 
@@ -76,15 +81,57 @@ export function InventoryModule() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<StockFilter>("todos");
   const [form, setForm] = useState<IngredientInput | null>(null);
-  const [counting, setCounting] = useState<{ id: string; name: string; unit: Unit } | null>(
-    null,
-  );
-  const [countValue, setCountValue] = useState("");
+  const [recipeFor, setRecipeFor] = useState<Ingredient | null>(null);
+  const [entry, setEntry] = useState<{
+    ingredient: Ingredient;
+    mode: "recibir" | "contar";
+  } | null>(null);
+  const [entryValue, setEntryValue] = useState("");
+
+  /**
+   * Índice inverso de la receta: para cada insumo, qué productos lo usan y
+   * cuánto. Es lo que permite editar el consumo desde el propio inventario.
+   */
+  const usageByIngredient = useMemo(() => {
+    const map = new Map<
+      string,
+      { productId: string; productName: string; qty: number }[]
+    >();
+    for (const product of state.products) {
+      for (const item of product.recipe) {
+        if (item.ingredientId === "milk") continue;
+        const list = map.get(item.ingredientId) ?? [];
+        list.push({
+          productId: product.id,
+          productName: product.name,
+          qty: item.qty,
+        });
+        map.set(item.ingredientId, list);
+      }
+    }
+    // Las leches se consumen a través del renglón "leche elegida": el insumo
+    // aparece ligado a los productos que permiten elegir leche.
+    for (const milk of state.milks) {
+      if (!milk.ingredientId) continue;
+      const list = map.get(milk.ingredientId) ?? [];
+      for (const product of state.products) {
+        const milkLine = product.recipe.find((r) => r.ingredientId === "milk");
+        if (!milkLine) continue;
+        list.push({
+          productId: product.id,
+          productName: `${product.name} · si eligen ${milk.name}`,
+          qty: milkLine.qty,
+        });
+      }
+      map.set(milk.ingredientId, list);
+    }
+    return map;
+  }, [state.products, state.milks]);
 
   if (state.role === "empleado") return <AccessGate module="Inventario" />;
   if (!state.flags.inventario) return <FlagGate module="Inventario" />;
 
-  const activeMilks = state.milks.filter((m) => m.available).length;
+  const packagingCount = state.ingredients.filter((i) => i.isPackaging).length;
   const nextOut = [...state.ingredients]
     .filter((i) => i.min > 0)
     .sort((a, b) => ratioFor(a) - ratioFor(b))[0];
@@ -123,17 +170,25 @@ export function InventoryModule() {
     if (saved) setForm(null);
   };
 
-  const submitCount = async () => {
-    if (!counting) return;
-    const value = Number(countValue);
+  const submitEntry = async () => {
+    if (!entry) return;
+    const value = Number(entryValue);
     if (!Number.isFinite(value) || value < 0) return;
-    const saved = await submit(() => setStock(counting.id, value), {
-      title: "Conteo registrado",
-      detail: `${counting.name}: ${unitLabel(value, counting.unit)}`,
-    });
-    if (saved !== null) {
-      setCounting(null);
-      setCountValue("");
+
+    const done =
+      entry.mode === "recibir"
+        ? await submit(() => receiveStock(entry.ingredient.id, value), {
+            title: "Entrada registrada",
+            detail: `+${unitLabel(value, entry.ingredient.unit)} de ${entry.ingredient.name}`,
+          })
+        : await submit(() => setStock(entry.ingredient.id, value), {
+            title: "Conteo registrado",
+            detail: `${entry.ingredient.name}: ${unitLabel(value, entry.ingredient.unit)}`,
+          });
+
+    if (done !== null) {
+      setEntry(null);
+      setEntryValue("");
     }
   };
 
@@ -142,7 +197,7 @@ export function InventoryModule() {
       <PageHeader
         eyebrow="Insumos · descuento por receta"
         title="Inventario"
-        desc="Cada venta descuenta insumos automáticamente según la receta del producto, incluida la leche que elige el cliente. Todo movimiento queda registrado."
+        desc="Cada venta descuenta insumos según la receta del producto, incluida la leche que elige el cliente. El empaque solo se descuenta en pedidos para llevar."
         actions={
           <Button variant="matcha" onClick={() => setForm({ ...EMPTY_FORM })}>
             + Nuevo insumo
@@ -172,13 +227,13 @@ export function InventoryModule() {
             <Stat
               label="En alerta"
               value={lowStock.length}
-              hint={lowStock.length ? "Por debajo del mínimo" : "Nada por resurtir"}
+              hint={lowStock.length ? "Por debajo del umbral" : "Nada por resurtir"}
               tone={lowStock.length ? "amber" : "neutral"}
             />
             <Stat
-              label="Leches activas"
-              value={activeMilks}
-              hint={`De ${state.milks.length} opciones en carta`}
+              label="Empaque"
+              value={packagingCount}
+              hint="Solo se gasta para llevar"
             />
             <Stat
               label="Próximo a agotarse"
@@ -189,7 +244,7 @@ export function InventoryModule() {
                   "—"
                 )
               }
-              hint="Según nivel mínimo"
+              hint="Según su umbral"
             />
           </div>
 
@@ -227,8 +282,10 @@ export function InventoryModule() {
           {visible.length ? (
             <div className="space-y-2.5">
               {visible.map((ing) => {
-                const meta = LEVEL_META[levelFor(ing)];
+                const meta = LEVEL_META[stockLevel(ing)];
                 const step = STEP[ing.unit];
+                const pct = thresholdPct(ing);
+                const uses = usageByIngredient.get(ing.id) ?? [];
                 return (
                   <Card key={ing.id} className="p-4 sm:px-5">
                     <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
@@ -238,11 +295,33 @@ export function InventoryModule() {
                             {ing.name}
                           </p>
                           <Badge tone={meta.tone}>{meta.label}</Badge>
+                          {ing.isPackaging ? (
+                            <Badge tone="neutral">Empaque</Badge>
+                          ) : null}
                         </div>
                         <p className="mt-1 text-xs text-muted">
-                          Mínimo: {unitLabel(ing.min, ing.unit)} · Uso semanal:{" "}
-                          {unitLabel(ing.weeklyUse, ing.unit)}
+                          Umbral: {unitLabel(ing.min, ing.unit)}
+                          {pct !== null ? ` (${pct}% del objetivo)` : ""} · Uso
+                          semanal: {unitLabel(ing.weeklyUse, ing.unit)}
                         </p>
+                        {uses.length ? (
+                          <button
+                            type="button"
+                            onClick={() => setRecipeFor(ing)}
+                            className="focus-ring mt-1 rounded-full text-xs font-extrabold text-matcha-deep hover:underline"
+                          >
+                            Lo usan {uses.length} producto
+                            {uses.length === 1 ? "" : "s"} · editar consumo
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setRecipeFor(ing)}
+                            className="focus-ring mt-1 rounded-full text-xs font-bold text-muted hover:text-ink"
+                          >
+                            Ningún producto lo consume todavía
+                          </button>
+                        )}
                       </div>
 
                       <div className="w-36 shrink-0" aria-hidden>
@@ -295,12 +374,19 @@ export function InventoryModule() {
                           size="sm"
                           disabled={busy}
                           onClick={() => {
-                            setCounting({
-                              id: ing.id,
-                              name: ing.name,
-                              unit: ing.unit,
-                            });
-                            setCountValue(String(Math.round(ing.stock * 100) / 100));
+                            setEntry({ ingredient: ing, mode: "recibir" });
+                            setEntryValue("");
+                          }}
+                        >
+                          Recibir pedido
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => {
+                            setEntry({ ingredient: ing, mode: "contar" });
+                            setEntryValue(String(Math.round(ing.stock * 100) / 100));
                           }}
                         >
                           Contar
@@ -316,6 +402,8 @@ export function InventoryModule() {
                               unit: ing.unit,
                               min: ing.min,
                               weeklyUse: ing.weeklyUse,
+                              isPackaging: ing.isPackaging,
+                              parLevel: ing.parLevel,
                             })
                           }
                         >
@@ -393,19 +481,72 @@ export function InventoryModule() {
                 </Select>
               </Field>
 
-              <Field label="Mínimo" hint="Debajo de esto se marca en alerta">
+              <Field
+                label="Nivel objetivo"
+                hint="Cuánto tienes cuando está bien surtido (opcional)"
+              >
                 <Input
                   type="number"
                   min={0}
                   step="any"
                   inputMode="decimal"
-                  value={form.min}
+                  value={form.parLevel ?? ""}
                   onChange={(e) =>
-                    setForm({ ...form, min: Number(e.target.value) })
+                    setForm({
+                      ...form,
+                      parLevel:
+                        e.target.value === "" ? null : Number(e.target.value),
+                    })
                   }
                 />
               </Field>
             </div>
+
+            <Field
+              label="Umbral de alerta"
+              hint="Debajo de esta cantidad el insumo se marca por resurtir"
+            >
+              <Input
+                type="number"
+                min={0}
+                step="any"
+                inputMode="decimal"
+                value={form.min}
+                onChange={(e) => setForm({ ...form, min: Number(e.target.value) })}
+              />
+            </Field>
+
+            {form.parLevel && form.parLevel > 0 ? (
+              <div className="rounded-xl2 bg-cream px-4 py-3">
+                <p className="text-xs font-bold text-ink">
+                  Equivale al {Math.round((form.min / form.parLevel) * 100)}% del
+                  nivel objetivo
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {[25, 50, 75].map((pct) => (
+                    <button
+                      key={pct}
+                      type="button"
+                      onClick={() =>
+                        setForm({
+                          ...form,
+                          min:
+                            Math.round(((form.parLevel ?? 0) * pct) / 100 * 100) /
+                            100,
+                        })
+                      }
+                      className="focus-ring rounded-full border border-line bg-white px-3 py-1 text-xs font-extrabold text-ink hover:border-matcha"
+                    >
+                      Avisar al {pct}%
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs leading-5 text-muted">
+                  Para insumos importados como el matcha conviene un umbral alto,
+                  porque el resurtido tarda.
+                </p>
+              </div>
+            ) : null}
 
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Uso semanal" hint="Referencia para resurtir (opcional)">
@@ -437,13 +578,25 @@ export function InventoryModule() {
                     }
                   />
                 </Field>
-              ) : (
-                <div className="self-end rounded-xl2 bg-cream px-4 py-3 text-xs leading-5 text-muted">
-                  La existencia se ajusta con los botones de la lista o con
-                  «Contar», para que quede registro del movimiento.
-                </div>
-              )}
+              ) : null}
             </div>
+
+            <label className="flex items-start justify-between gap-3 rounded-xl2 border border-line bg-paper px-4 py-3">
+              <span className="min-w-0">
+                <span className="block text-sm font-bold text-ink">
+                  Es empaque
+                </span>
+                <span className="mt-0.5 block text-xs leading-5 text-muted">
+                  Vasos, tapas, servilletas, popotes. Solo se descuentan cuando el
+                  pedido es para llevar.
+                </span>
+              </span>
+              <Toggle
+                checked={form.isPackaging}
+                onChange={(v) => setForm({ ...form, isPackaging: v })}
+                label="Es empaque"
+              />
+            </label>
 
             <div className="flex gap-2 pt-2">
               <Button variant="ghost" className="flex-1" onClick={() => setForm(null)}>
@@ -462,49 +615,323 @@ export function InventoryModule() {
         ) : null}
       </Modal>
 
-      {/* --------------------------------- Conteo --------------------------------- */}
+      {/* ------------------------ Recibir pedido / contar ------------------------ */}
       <Modal
-        open={!!counting}
-        onClose={() => setCounting(null)}
-        title="Conteo físico"
+        open={!!entry}
+        onClose={() => setEntry(null)}
+        title={entry?.mode === "recibir" ? "Recibir pedido" : "Conteo físico"}
       >
-        {counting ? (
+        {entry ? (
           <div className="space-y-4">
             <p className="text-sm leading-6 text-muted">
-              Captura lo que hay realmente de <strong>{counting.name}</strong>. La
-              diferencia contra el sistema queda registrada como ajuste.
+              {entry.mode === "recibir" ? (
+                <>
+                  Escribe cuánto llegó de <strong>{entry.ingredient.name}</strong>.
+                  Se suma a la existencia actual de{" "}
+                  {unitLabel(entry.ingredient.stock, entry.ingredient.unit)}.
+                </>
+              ) : (
+                <>
+                  Captura lo que hay realmente de{" "}
+                  <strong>{entry.ingredient.name}</strong>. La diferencia contra el
+                  sistema queda registrada como ajuste.
+                </>
+              )}
             </p>
-            <Field label={`Cantidad contada (${counting.unit})`}>
+
+            <Field
+              label={
+                entry.mode === "recibir"
+                  ? `Cantidad recibida (${entry.ingredient.unit})`
+                  : `Cantidad contada (${entry.ingredient.unit})`
+              }
+            >
               <Input
                 autoFocus
                 type="number"
                 min={0}
                 step="any"
                 inputMode="decimal"
-                value={countValue}
-                onChange={(e) => setCountValue(e.target.value)}
+                value={entryValue}
+                placeholder={entry.mode === "recibir" ? "Ej. 200" : "0"}
+                onChange={(e) => setEntryValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void submitEntry();
+                }}
+                className="py-3 text-lg"
               />
             </Field>
+
+            {entry.mode === "recibir" && Number(entryValue) > 0 ? (
+              <p className="text-xs font-bold text-matcha-deep">
+                Quedará en{" "}
+                {unitLabel(
+                  Math.round((entry.ingredient.stock + Number(entryValue)) * 100) /
+                    100,
+                  entry.ingredient.unit,
+                )}
+              </p>
+            ) : null}
+
             <div className="flex gap-2">
               <Button
                 variant="ghost"
                 className="flex-1"
-                onClick={() => setCounting(null)}
+                onClick={() => setEntry(null)}
               >
                 Cancelar
               </Button>
               <Button
                 variant="matcha"
                 className="flex-1"
-                disabled={busy || countValue.trim() === ""}
-                onClick={() => void submitCount()}
+                disabled={busy || entryValue.trim() === ""}
+                onClick={() => void submitEntry()}
               >
-                Guardar conteo
+                {entry.mode === "recibir" ? "Registrar entrada" : "Guardar conteo"}
               </Button>
             </div>
           </div>
         ) : null}
       </Modal>
+
+      {/* ------------------- Consumo por producto (desde el insumo) ------------------- */}
+      <Modal
+        open={!!recipeFor}
+        onClose={() => setRecipeFor(null)}
+        title={recipeFor ? `Consumo de ${recipeFor.name}` : ""}
+        wide
+      >
+        {recipeFor ? (
+          <IngredientUsagePanel
+            ingredient={recipeFor}
+            onClose={() => setRecipeFor(null)}
+          />
+        ) : null}
+      </Modal>
+    </div>
+  );
+}
+
+/* --------------------- Panel de consumo por producto ------------------------- */
+
+/**
+ * La vista inversa de la receta: partiendo de un insumo, cuánto gasta cada
+ * producto y la posibilidad de corregirlo ahí mismo. El cliente lo pidió así
+ * porque es como piensa el inventario: "¿quién se está comiendo mi leche?".
+ */
+function IngredientUsagePanel({
+  ingredient,
+  onClose,
+}: {
+  ingredient: Ingredient;
+  onClose: () => void;
+}) {
+  const { state, submit, busy } = useStore();
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+
+  // Productos que lo usan directamente en su receta.
+  const direct = state.products
+    .map((product) => {
+      const line = product.recipe.find((r) => r.ingredientId === ingredient.id);
+      return line ? { product, qty: line.qty } : null;
+    })
+    .filter((x): x is { product: (typeof state.products)[number]; qty: number } =>
+      Boolean(x),
+    );
+
+  // Si el insumo es una leche, se consume por el renglón "leche elegida".
+  const asMilk = state.milks.find((m) => m.ingredientId === ingredient.id);
+  const viaMilk = asMilk
+    ? state.products.filter((p) => p.recipe.some((r) => r.ingredientId === "milk"))
+    : [];
+
+  const available = state.products.filter(
+    (p) => !p.recipe.some((r) => r.ingredientId === ingredient.id),
+  );
+  const [addProductId, setAddProductId] = useState("");
+  const [addQty, setAddQty] = useState("");
+
+  /** Guarda el producto completo con la cantidad nueva para este insumo. */
+  const saveQty = async (
+    product: (typeof state.products)[number],
+    qty: number | null,
+  ) => {
+    const recipe = product.recipe
+      .filter((r) => r.ingredientId !== ingredient.id)
+      .map((r) => ({ ingredientId: r.ingredientId, qty: r.qty }));
+    if (qty !== null && qty > 0) {
+      recipe.push({ ingredientId: ingredient.id, qty });
+    }
+    return submit(
+      () =>
+        saveProduct({
+          id: product.id,
+          name: product.name,
+          category: product.category,
+          price: product.price,
+          desc: product.desc,
+          emoji: product.emoji,
+          active: product.active,
+          popular: product.popular,
+          mods: product.mods,
+          recipe,
+        }),
+      {
+        title: qty === null ? "Insumo quitado de la receta" : "Receta actualizada",
+        detail: product.name,
+      },
+    );
+  };
+
+  return (
+    <div className="space-y-5">
+      <p className="-mt-2 text-sm leading-6 text-muted">
+        Cuánto <strong>{ingredient.name}</strong> gasta cada producto al venderse.
+        Lo que cambies aquí es lo que se descontará del inventario en la próxima
+        venta.
+      </p>
+
+      {direct.length ? (
+        <div className="space-y-2">
+          {direct.map(({ product, qty }) => {
+            const key = product.id;
+            const value = drafts[key] ?? String(qty);
+            const changed = Number(value) !== qty;
+            return (
+              <div
+                key={key}
+                className="flex flex-wrap items-center gap-3 rounded-xl2 border border-line bg-paper px-4 py-3"
+              >
+                <span className="text-lg" aria-hidden>
+                  {product.emoji}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-sm font-bold text-ink">
+                  {product.name}
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <Input
+                    type="number"
+                    min={0}
+                    step="any"
+                    inputMode="decimal"
+                    aria-label={`Cantidad de ${ingredient.name} en ${product.name}`}
+                    value={value}
+                    onChange={(e) =>
+                      setDrafts((d) => ({ ...d, [key]: e.target.value }))
+                    }
+                    className="w-24 text-center"
+                  />
+                  <span className="w-8 text-xs font-bold text-muted">
+                    {ingredient.unit}
+                  </span>
+                </span>
+                <Button
+                  variant={changed ? "matcha" : "ghost"}
+                  size="sm"
+                  disabled={busy || !changed || !(Number(value) > 0)}
+                  onClick={() => void saveQty(product, Number(value))}
+                >
+                  Guardar
+                </Button>
+                <ConfirmButton
+                  label="Quitar"
+                  confirmLabel="Sí"
+                  disabled={busy}
+                  onConfirm={() => void saveQty(product, null)}
+                />
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="rounded-xl2 border border-dashed border-line px-4 py-6 text-center text-sm leading-6 text-muted">
+          Ningún producto tiene este insumo en su receta todavía.
+        </p>
+      )}
+
+      {/* ------------------------- Alta desde este panel ------------------------- */}
+      {available.length ? (
+        <div className="border-t border-line pt-4">
+          <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-muted">
+            Agregar a la receta de otro producto
+          </p>
+          <div className="mt-2 flex flex-wrap items-end gap-2">
+            <span className="min-w-[12rem] flex-1">
+              <Select
+                aria-label="Producto"
+                value={addProductId}
+                onChange={(e) => setAddProductId(e.target.value)}
+              >
+                <option value="">Elige un producto…</option>
+                {available.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </Select>
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <Input
+                type="number"
+                min={0}
+                step="any"
+                inputMode="decimal"
+                aria-label="Cantidad"
+                placeholder="Cantidad"
+                value={addQty}
+                onChange={(e) => setAddQty(e.target.value)}
+                className="w-28"
+              />
+              <span className="w-8 text-xs font-bold text-muted">
+                {ingredient.unit}
+              </span>
+            </span>
+            <Button
+              variant="matcha"
+              disabled={busy || !addProductId || !(Number(addQty) > 0)}
+              onClick={async () => {
+                const product = available.find((p) => p.id === addProductId);
+                if (!product) return;
+                const done = await saveQty(product, Number(addQty));
+                if (done) {
+                  setAddProductId("");
+                  setAddQty("");
+                }
+              }}
+            >
+              Agregar
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {/* ------------------------- Consumo indirecto (leche) ------------------------- */}
+      {asMilk && viaMilk.length ? (
+        <div className="rounded-xl2 border border-line bg-cream px-4 py-3">
+          <p className="text-xs font-extrabold text-ink">
+            También se consume como leche «{asMilk.name}»
+          </p>
+          <p className="mt-1 text-xs leading-5 text-muted">
+            {viaMilk.length} producto{viaMilk.length === 1 ? "" : "s"} usan el
+            renglón «leche elegida por el cliente». La cantidad se define en la
+            receta de cada producto y se descuenta de este insumo solo cuando el
+            cliente elige esta leche.
+          </p>
+        </div>
+      ) : null}
+
+      {ingredient.isPackaging ? (
+        <div className="rounded-xl2 border border-matcha/30 bg-matcha-mist px-4 py-3 text-xs leading-5 text-ink">
+          Este insumo está marcado como <strong>empaque</strong>: solo se descuenta
+          cuando el pedido se cobra «para llevar».
+        </div>
+      ) : null}
+
+      <div className="border-t border-line pt-4">
+        <Button variant="ghost" className="w-full" onClick={onClose}>
+          Cerrar
+        </Button>
+      </div>
     </div>
   );
 }

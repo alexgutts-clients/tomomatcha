@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { cancelOrder, moveOrder } from "@/lib/actions";
 import { useDerived, useStore } from "@/lib/store";
 import { dayKey, minutesSince, money, time } from "@/lib/format";
 import {
   ORDER_FLOW,
   PAYMENT_META,
+  SERVICE_META,
   STATUS_META,
   type Order,
   type OrderStatus,
@@ -20,6 +21,7 @@ import {
   ConfirmButton,
   EmptyState,
   PageHeader,
+  cx,
 } from "@/components/ui";
 
 const COLUMN_TONE: Record<
@@ -43,6 +45,13 @@ const EMPTY_COPY: Record<OrderStatus, string> = {
 
 const DELIVERED_CAP = 6;
 
+/**
+ * Minutos de espera a partir de los cuales la comanda se marca. El cliente
+ * pidió que el pedido que se está tardando salte a la vista en rojo.
+ */
+const WAIT_WARN_MIN = 6;
+const WAIT_LATE_MIN = 10;
+
 /* ------------------------------ Tarjeta de pedido ----------------------------- */
 
 function OrderCard({ order }: { order: Order }) {
@@ -51,8 +60,10 @@ function OrderCard({ order }: { order: Order }) {
   const waited = minutesSince(order.createdAt);
   const isAdmin = state.role === "admin";
 
+  const late = !delivered && order.status !== "cancelado" && waited >= WAIT_LATE_MIN;
+
   return (
-    <Card className="animate-rise">
+    <Card className={cx("animate-rise", late && "border-danger/50 bg-danger/5")}>
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-extrabold text-ink">
           #{order.folio}
@@ -65,9 +76,26 @@ function OrderCard({ order }: { order: Order }) {
             <Badge tone="neutral">✔ {time(order.deliveredAt, tz)}</Badge>
           ) : null
         ) : (
-          <Badge tone={waited >= 10 ? "amber" : "neutral"}>hace {waited} min</Badge>
+          <Badge
+            tone={
+              waited >= WAIT_LATE_MIN
+                ? "danger"
+                : waited >= WAIT_WARN_MIN
+                  ? "amber"
+                  : "neutral"
+            }
+          >
+            hace {waited} min
+          </Badge>
         )}
       </div>
+
+      <p className="mt-1.5">
+        <Badge tone={order.serviceMode === "llevar" ? "ink" : "matcha"}>
+          {SERVICE_META[order.serviceMode].emoji}{" "}
+          {SERVICE_META[order.serviceMode].label}
+        </Badge>
+      </p>
 
       {order.customerName ? (
         <p className="mt-1 text-xs text-muted">
@@ -183,6 +211,23 @@ export function OrdersModule() {
   const { state, tz } = useStore();
   const { activeOrders, todayKey } = useDerived();
   const [showCancelled, setShowCancelled] = useState(false);
+  const boardRef = useRef<HTMLDivElement>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+
+  // Modo barra: el tablero ocupa toda la pantalla del iPad, sin menús alrededor.
+  useEffect(() => {
+    const onChange = () => setFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => undefined);
+    } else {
+      void boardRef.current?.requestFullscreen().catch(() => undefined);
+    }
+  }, []);
 
   const deliveredToday = state.orders
     .filter(
@@ -218,12 +263,17 @@ export function OrdersModule() {
         title="Comandas"
         desc="Cada pedido avanza por cuatro estados: nuevo, en preparación, listo y entregado. El tablero se actualiza solo cada pocos segundos."
         actions={
-          <Link
-            href="/pos"
-            className="focus-ring inline-flex items-center gap-2 rounded-full border border-line bg-white px-5 py-2.5 text-sm font-bold text-ink transition hover:border-matcha hover:text-matcha-deep"
-          >
-            + Nueva venta
-          </Link>
+          <>
+            <Button variant="ghost" onClick={toggleFullscreen}>
+              {fullscreen ? "Salir de pantalla completa" : "Pantalla completa"}
+            </Button>
+            <Link
+              href="/pos"
+              className="focus-ring inline-flex items-center gap-2 rounded-full border border-line bg-white px-5 py-2.5 text-sm font-bold text-ink transition hover:border-matcha hover:text-matcha-deep"
+            >
+              + Nueva venta
+            </Link>
+          </>
         }
       />
 
@@ -244,7 +294,13 @@ export function OrdersModule() {
         />
       ) : null}
 
-      <div className="scrollbar-slim flex snap-x gap-4 overflow-x-auto pb-4 xl:grid xl:grid-cols-4 xl:overflow-visible xl:pb-0">
+      <div
+        ref={boardRef}
+        className={cx(
+          "scrollbar-slim flex snap-x gap-4 overflow-x-auto pb-4 xl:grid xl:grid-cols-4 xl:overflow-visible xl:pb-0",
+          fullscreen && "overflow-y-auto bg-paper p-6",
+        )}
+      >
         {columns.map((col) => (
           <section
             key={col.status}

@@ -549,6 +549,7 @@ export async function seedCatalog(): Promise<ActionResult<{ products: number }>>
       stock: 0,
       min_stock: item.min,
       weekly_use: item.weeklyUse,
+      is_packaging: item.packaging ?? false,
     }));
     const ingredients = await supabase
       .from("ingredients")

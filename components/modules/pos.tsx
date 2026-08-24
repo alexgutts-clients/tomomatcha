@@ -10,12 +10,14 @@ import {
   CATEGORY_META,
   PAYMENT_META,
   pointsFor,
+  SERVICE_META,
   SWEETNESS_STEPS,
   type CartLine,
   type CategoryId,
   type LineModifiers,
   type PaymentMethod,
   type Product,
+  type ServiceMode,
   type Sweetness,
   type Temperature,
 } from "@/lib/types";
@@ -102,6 +104,9 @@ export function PosModule() {
   const [discountPct, setDiscountPct] = useState(0);
   const [customerId, setCustomerId] = useState("");
   const [payment, setPayment] = useState<PaymentMethod>("efectivo");
+  // Por omisión "para llevar": si el cajero olvida cambiarlo, el sistema
+  // descuenta empaque de más y no de menos, que es el error menos costoso.
+  const [serviceMode, setServiceMode] = useState<ServiceMode>("llevar");
   const [cashReceived, setCashReceived] = useState("");
   const [mobileTicketOpen, setMobileTicketOpen] = useState(false);
   const [success, setSuccess] = useState<{ folio: number; total: number } | null>(
@@ -270,6 +275,7 @@ export function PosModule() {
           discountPct,
           discountLabel: discountPct > 0 ? activePromo?.label : undefined,
           payment: activePayment,
+          serviceMode,
           customerId: state.flags.lealtad && customerId ? customerId : undefined,
           cashReceived:
             activePayment === "efectivo" && cashReceived !== ""
@@ -288,6 +294,7 @@ export function PosModule() {
     setDiscountPct(0);
     setCustomerId("");
     setPayment("efectivo");
+    setServiceMode("llevar");
     setCashReceived("");
     setMobileTicketOpen(false);
     setSuccess({ folio: result.folio, total: chargedTotal });
@@ -295,8 +302,50 @@ export function PosModule() {
 
   /* ----------------------------- Cuerpo del ticket -------------------------- */
 
+  const packagingCount = state.ingredients.filter(
+    (i) => i.isPackaging && i.active,
+  ).length;
+
   const ticketBody = (
     <div className="space-y-4">
+      {/* ------------------------- Aquí o para llevar ------------------------- */}
+      <div>
+        <p className="eyebrow">¿Dónde se consume?</p>
+        <div
+          className="mt-2 grid grid-cols-2 gap-2"
+          role="group"
+          aria-label="Modo de servicio"
+        >
+          {(["aqui", "llevar"] as ServiceMode[]).map((mode) => {
+            const selected = serviceMode === mode;
+            return (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setServiceMode(mode)}
+                aria-pressed={selected}
+                className={cx(
+                  "focus-ring flex items-center justify-center gap-2 rounded-xl2 border px-3 py-2.5 text-sm font-extrabold transition",
+                  selected
+                    ? "border-matcha bg-matcha-mist text-ink"
+                    : "border-line bg-white text-muted hover:border-matcha",
+                )}
+              >
+                <span aria-hidden>{SERVICE_META[mode].emoji}</span>
+                {SERVICE_META[mode].label}
+              </button>
+            );
+          })}
+        </div>
+        {state.flags.inventario && packagingCount > 0 ? (
+          <p className="mt-1.5 text-xs leading-5 text-muted">
+            {serviceMode === "llevar"
+              ? "Se descuentan vasos, tapas y demás empaque."
+              : "No se descuenta empaque: se sirve en loza."}
+          </p>
+        ) : null}
+      </div>
+
       {cart.length ? (
         <ul className="space-y-2.5">
           {cart.map((line) => {

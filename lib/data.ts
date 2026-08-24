@@ -14,6 +14,7 @@ import type {
   Order,
   OrderExtraSnapshot,
   OrderItem,
+  PreparedItem,
   Product,
   RecipeItem,
   Settings,
@@ -32,6 +33,7 @@ import type {
   MilkOptionRow,
   OrderItemRow,
   OrderRow,
+  PreparedItemRow,
   ProductRecipeItemRow,
   ProductRow,
   SettingsRow,
@@ -51,6 +53,7 @@ import { toStaff } from "./auth";
 const ORDER_WINDOW_DAYS = 9;
 const CUSTOMER_LIMIT = 1000;
 const CASH_CLOSE_LIMIT = 60;
+const PREPARED_LIMIT = 200;
 
 /* ------------------------------- Traductores -------------------------------- */
 
@@ -91,7 +94,23 @@ function toIngredient(row: IngredientRow): Ingredient {
     stock: num(row.stock),
     min: num(row.min_stock),
     weeklyUse: num(row.weekly_use),
+    isPackaging: row.is_packaging,
+    parLevel: row.par_level === null ? null : num(row.par_level),
     active: row.active,
+  };
+}
+
+function toPreparedItem(row: PreparedItemRow): PreparedItem {
+  return {
+    id: row.id,
+    name: row.name,
+    qty: num(row.qty),
+    unit: row.unit,
+    producedOn: row.produced_on,
+    expiresOn: row.expires_on,
+    notes: row.notes ?? "",
+    acknowledgedAt: row.acknowledged_at,
+    discardedAt: row.discarded_at,
   };
 }
 
@@ -207,6 +226,7 @@ function toOrder(row: OrderRow, items: OrderItem[]): Order {
     total: num(row.total),
     payment: row.payment,
     status: row.status,
+    serviceMode: row.service_mode,
     createdAt: row.created_at,
     deliveredAt: row.delivered_at ?? undefined,
     customerId: row.customer_id ?? undefined,
@@ -403,6 +423,7 @@ export async function loadAppState(me: Staff): Promise<AppState> {
     customers,
     orders,
     cashCloses,
+    preparedItems,
     staffRows,
   ] = await Promise.all([
     supabase
@@ -428,6 +449,13 @@ export async function loadAppState(me: Staff): Promise<AppState> {
       .select("*")
       .order("date_key", { ascending: false })
       .limit(CASH_CLOSE_LIMIT),
+    // Los lotes desechados salen de la vista; el resto se ordena por urgencia.
+    supabase
+      .from("prepared_items")
+      .select("*")
+      .is("discarded_at", null)
+      .order("expires_on", { ascending: true })
+      .limit(PREPARED_LIMIT),
     // Los datos del equipo (correos incluidos) sólo se envían a administradores.
     me.role === "admin"
       ? supabase
@@ -450,6 +478,11 @@ export async function loadAppState(me: Staff): Promise<AppState> {
   if (cashCloses.error) {
     throw new Error(`No se pudieron leer los cortes: ${cashCloses.error.message}`);
   }
+  if (preparedItems.error) {
+    throw new Error(
+      `No se pudieron leer los productos preparados: ${preparedItems.error.message}`,
+    );
+  }
   if (staffRows.error) {
     throw new Error(`No se pudo leer el equipo: ${staffRows.error.message}`);
   }
@@ -470,6 +503,9 @@ export async function loadAppState(me: Staff): Promise<AppState> {
     extras,
     orders,
     customers: ((customers.data ?? []) as CustomerRow[]).map(toCustomer),
+    preparedItems: ((preparedItems.data ?? []) as PreparedItemRow[]).map(
+      toPreparedItem,
+    ),
     cashCloses: ((cashCloses.data ?? []) as CashCloseRow[]).map(toCashClose),
     media: { configured: isR2Configured(), publicBase: r2PublicBase() },
   };

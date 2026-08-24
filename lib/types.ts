@@ -28,9 +28,14 @@ export interface Ingredient {
   name: string;
   unit: Unit;
   stock: number;
+  /** Umbral: por debajo de esto el insumo entra en alerta */
   min: number;
   /** Consumo típico semanal, referencia para resurtir */
   weeklyUse: number;
+  /** Vasos, tapas, servilletas: solo se gastan en pedidos para llevar */
+  isPackaging: boolean;
+  /** Nivel objetivo de resurtido. Permite leer el umbral como porcentaje. */
+  parLevel: number | null;
   active: boolean;
 }
 
@@ -121,6 +126,17 @@ export type OrderStatus =
 
 export type PaymentMethod = "efectivo" | "tarjeta" | "mercadopago";
 
+/** Dónde se consume el pedido. Decide si se gasta empaque o no. */
+export type ServiceMode = "aqui" | "llevar";
+
+export const SERVICE_META: Record<
+  ServiceMode,
+  { label: string; short: string; emoji: string }
+> = {
+  aqui: { label: "Para aquí", short: "Aquí", emoji: "🍽️" },
+  llevar: { label: "Para llevar", short: "Llevar", emoji: "🥤" },
+};
+
 export interface Order {
   id: string;
   folio: number;
@@ -131,6 +147,7 @@ export interface Order {
   total: number;
   payment: PaymentMethod;
   status: OrderStatus;
+  serviceMode: ServiceMode;
   createdAt: string;
   deliveredAt?: string;
   customerId?: string;
@@ -150,6 +167,19 @@ export interface Customer {
   cardToken: string;
   since: string;
   lastVisit: string | null;
+}
+
+/** Producto elaborado en casa: lo que importa de él es la caducidad. */
+export interface PreparedItem {
+  id: string;
+  name: string;
+  qty: number;
+  unit: Unit;
+  producedOn: string;
+  expiresOn: string;
+  notes: string;
+  acknowledgedAt: string | null;
+  discardedAt: string | null;
 }
 
 export interface CashClose {
@@ -204,6 +234,7 @@ export interface AppState {
   extras: ExtraOption[];
   orders: Order[];
   customers: Customer[];
+  preparedItems: PreparedItem[];
   cashCloses: CashClose[];
   /** Configuración de infraestructura visible para la interfaz */
   media: { configured: boolean; publicBase: string | null };
@@ -221,6 +252,7 @@ export interface CheckoutPayload {
   discountPct: number;
   discountLabel?: string;
   payment: PaymentMethod;
+  serviceMode: ServiceMode;
   customerId?: string;
   cashReceived?: number;
 }
@@ -286,3 +318,56 @@ export function loyaltyTier(points: number): {
   if (points >= 600) return { name: "Hoja", next: 1500 };
   return { name: "Brote", next: 600 };
 }
+
+/* --------------------------- Reglas de inventario ---------------------------- */
+
+export type StockLevel = "critico" | "resurtir" | "ok";
+
+/** Un insumo entra en alerta cuando su existencia cae hasta el umbral. */
+export function stockLevel(ing: Ingredient): StockLevel {
+  if (ing.min <= 0) return "ok";
+  if (ing.stock <= ing.min * 0.5) return "critico";
+  if (ing.stock <= ing.min) return "resurtir";
+  return "ok";
+}
+
+/** El umbral leído como porcentaje del nivel objetivo, si hay uno definido. */
+export function thresholdPct(ing: Ingredient): number | null {
+  if (!ing.parLevel || ing.parLevel <= 0) return null;
+  return Math.round((ing.min / ing.parLevel) * 100);
+}
+
+/* -------------------------- Reglas de caducidad ------------------------------ */
+
+/** Días que faltan para caducar. Negativo = ya caducó. */
+export function daysUntil(expiresOn: string, todayKey: string): number {
+  const toUtc = (key: string) => {
+    const [y, m, d] = key.split("-").map(Number);
+    return Date.UTC(y, (m ?? 1) - 1, d ?? 1);
+  };
+  return Math.round((toUtc(expiresOn) - toUtc(todayKey)) / 86_400_000);
+}
+
+export type ExpiryLevel = "caducado" | "critico" | "pronto" | "ok";
+
+/**
+ * El cliente pidió cuenta regresiva y alerta destacada el último día. Un lote
+ * al que le queda un día o menos es crítico, y sigue marcado hasta que un
+ * administrador lo atienda.
+ */
+export function expiryLevel(days: number): ExpiryLevel {
+  if (days < 0) return "caducado";
+  if (days <= 1) return "critico";
+  if (days <= 3) return "pronto";
+  return "ok";
+}
+
+export const EXPIRY_META: Record<
+  ExpiryLevel,
+  { label: string; tone: "danger" | "amber" | "matcha" }
+> = {
+  caducado: { label: "Caducado", tone: "danger" },
+  critico: { label: "Último día", tone: "danger" },
+  pronto: { label: "Por vencer", tone: "amber" },
+  ok: { label: "En buen estado", tone: "matcha" },
+};

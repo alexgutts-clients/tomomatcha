@@ -326,13 +326,29 @@ En este orden:
 4. **Inventario.** Las existencias arrancan en **cero** a propósito: el inventario
    real se captura contando la barra. Usa el botón **Contar** de cada insumo para
    registrar lo que hay; la diferencia queda en la bitácora.
-5. **Ajustes → Equipo.** Pide a los baristas que inicien sesión, y actívalos aquí
+   - Cuando llegue mercancía usa **Recibir pedido**, que *suma* a lo que había.
+     **Contar** *reemplaza* el total. No son lo mismo.
+   - Marca como **empaque** los vasos, tapas, popotes y bolsas. Esos insumos sólo
+     se descuentan en los pedidos «para llevar». Los dos vasos del catálogo
+     inicial ya vienen marcados.
+   - Si quieres que el aviso salga a cierto porcentaje, escribe el **nivel
+     objetivo** del insumo (lo que cabe lleno) y pulsa «Avisar al 25 / 50 / 75 %».
+   - Para revisar o cambiar **cuánto gasta cada producto** de un insumo, abre
+     **Consumo** en ese insumo: ahí ves todos los productos que lo usan, editas
+     los mililitros o gramos y puedes añadirlo a la receta de otro producto.
+5. **Productos preparados.** Si preparan jarabes, mermeladas o pasteles en casa,
+   regístralos en **Preparados** con su fecha de elaboración y de caducidad. La
+   alerta del último día no se va sola: se queda hasta que alguien pulsa «Ya lo
+   revisé».
+6. **Ajustes → Equipo.** Pide a los baristas que inicien sesión, y actívalos aquí
    con el rol que corresponda.
-6. **Clientes.** Registra a los primeros; cada uno recibe su QR de lealtad
+7. **Clientes.** Registra a los primeros; cada uno recibe su QR de lealtad
    escaneable.
-7. **Punto de venta.** Haz una venta de prueba y confirma que aparece en
-   Comandas, descuenta inventario y suma puntos. Si fue sólo prueba, anúlala
-   desde Comandas → **Cancelar ticket** (devuelve insumos y puntos).
+8. **Punto de venta.** Haz una venta de prueba **para llevar** y confirma que
+   aparece en Comandas, descuenta inventario (incluido el vaso) y suma puntos.
+   Repite una **para aquí** y comprueba que esa vez el vaso no bajó. Si fueron
+   sólo pruebas, anúlalas desde Comandas → **Cancelar ticket** (devuelve insumos
+   y puntos).
 
 ---
 
@@ -397,9 +413,10 @@ Con Vercel:
 
 Para que quede explícito qué **no** hace la aplicación todavía:
 
-1. **Cobro real con tarjeta o Mercado Pago.** Los métodos se registran para el
-   corte, pero no hay integración con terminal ni con la API de Mercado Pago. Se
-   necesitaría una cuenta de vendedor y el flujo de pagos (webhooks incluidos).
+1. **Cobro real con tarjeta o Mercado Pago.** Queda para la **etapa 2**. Hoy los
+   métodos se registran para el corte, pero no hay integración con terminal ni
+   con la API de Mercado Pago. Se necesitaría una cuenta de vendedor y el flujo
+   de pagos (webhooks incluidos).
 2. **Sincronizar reseñas de Google.** El QR para dejar reseña es real; traer las
    reseñas y la calificación automáticamente requiere la API de Google Business
    Profile (con facturación activada). Hoy la calificación se captura a mano en
@@ -408,5 +425,7 @@ Para que quede explícito qué **no** hace la aplicación todavía:
    hay envío de campañas: haría falta WhatsApp Business API o un proveedor.
 4. **Varias sucursales.** El esquema lo soportaría, pero la interfaz asume una.
 5. **Facturación / CFDI.** No hay timbrado ni conexión con un PAC.
+6. **Documentos legales** (aviso de privacidad, términos, contratos laborales).
+   No son trabajo de la aplicación; se acordó tratarlos aparte.
 
 Cada punto es un proyecto en sí. Si vas a atacar alguno, dímelo y lo planeamos.

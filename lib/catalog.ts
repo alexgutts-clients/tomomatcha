@@ -17,6 +17,8 @@ export interface CatalogIngredient {
   unit: Unit;
   min: number;
   weeklyUse: number;
+  /** Empaque: sólo se descuenta cuando el pedido se cobra «para llevar». */
+  packaging?: boolean;
 }
 
 export interface CatalogMilk {
@@ -74,8 +76,8 @@ export const CATALOG_INGREDIENTS: CatalogIngredient[] = [
   { slug: "fresa", name: "Puré de fresa", unit: "ml", min: 500, weeklyUse: 900 },
   { slug: "crema-batida", name: "Crema batida", unit: "g", min: 300, weeklyUse: 650 },
   { slug: "hielo", name: "Hielo", unit: "g", min: 8000, weeklyUse: 30000 },
-  { slug: "vaso-12", name: "Vaso 12 oz + tapa", unit: "pza", min: 150, weeklyUse: 420 },
-  { slug: "vaso-16", name: "Vaso 16 oz + tapa", unit: "pza", min: 120, weeklyUse: 380 },
+  { slug: "vaso-12", name: "Vaso 12 oz + tapa", unit: "pza", min: 150, weeklyUse: 420, packaging: true },
+  { slug: "vaso-16", name: "Vaso 16 oz + tapa", unit: "pza", min: 120, weeklyUse: 380, packaging: true },
   { slug: "croissant-pza", name: "Croissant de mantequilla", unit: "pza", min: 8, weeklyUse: 40 },
   { slug: "pan-matcha-pza", name: "Panqué de matcha (rebanada)", unit: "pza", min: 6, weeklyUse: 30 },
   { slug: "cheesecake-pza", name: "Cheesecake de matcha (rebanada)", unit: "pza", min: 4, weeklyUse: 22 },

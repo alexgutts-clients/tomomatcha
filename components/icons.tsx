@@ -100,6 +100,14 @@ export const Icons = {
       <path d="M4 7h16M4 12h16M4 17h10" />
     </svg>
   ),
+  preparados: (p: IconProps) => (
+    <svg {...base(p)}>
+      <path d="M6 8h12l-.9 11a2 2 0 0 1-2 1.9H8.9a2 2 0 0 1-2-1.9L6 8Z" />
+      <path d="M9 8V5.5a3 3 0 0 1 6 0V8" />
+      <path d="M12 12v5" />
+      <path d="M9.5 14.5h5" />
+    </svg>
+  ),
   leaf: (p: IconProps) => (
     <svg {...base(p)}>
       <path d="M5 19C5 9 12 4 20 4c0 8-5 15-15 15Z" />

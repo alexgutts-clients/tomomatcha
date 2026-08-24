@@ -54,6 +54,7 @@ Tres decisiones que vale la pena conocer antes de tocar el código:
 | Punto de venta | `/pos` | Ambos perfiles |
 | Comandas (tablero de barra) | `/comandas` | Ambos perfiles |
 | Inventario de insumos | `/inventario` | Administrador · módulo |
+| Productos preparados (caducidades) | `/preparados` | Administrador |
 | Productos y recetas | `/productos` | Administrador |
 | Reportes | `/reportes` | Administrador |
 | Clientes y lealtad | `/clientes` | Administrador · módulo |
@@ -64,6 +65,12 @@ Tres decisiones que vale la pena conocer antes de tocar el código:
 Al **cobrar** se crea la comanda, se descuenta el inventario según la receta del
 producto (incluida la leche elegida), se suman los puntos de lealtad y se
 actualizan el panel, los reportes y el corte de caja.
+
+Cada cobro se marca **para llevar** o **para aquí**. Los insumos señalados como
+*empaque* (vasos, tapas, popotes, bolsas) sólo se descuentan cuando el pedido es
+para llevar; en consumo en mesa no se tocan. La caja empieza siempre en «para
+llevar»: si el cajero olvida cambiarlo, el sistema descuenta empaque de más y no
+de menos, que es el error menos costoso de corregir en el conteo.
 
 ## Perfiles y acceso
 
@@ -171,6 +178,27 @@ scripts/doctor.mjs  Revisión de conexiones
   qué.
 - **Anular un ticket** devuelve los insumos y retira los puntos, y sólo se puede
   antes de cerrar el corte de ese día.
+- **Cuánto gasta cada producto.** La receta se edita desde Productos, y también
+  al revés: en Inventario, cada insumo abre un panel de *consumo* que lista todos
+  los productos que lo usan y con cuánto. Cambiar ahí «180 ml de leche» actualiza
+  la receta del producto, y desde el mismo panel se puede sumar el insumo a la
+  receta de otro producto. Las dos vistas escriben en la misma tabla.
+- **Cuándo avisar que falta un insumo.** Cada insumo tiene un mínimo y, si se
+  define un *nivel objetivo* (lo que cabe lleno), el aviso se puede fijar como
+  porcentaje: «avisar al 25 %» calcula el mínimo solo. Por debajo del mínimo el
+  insumo se marca «resurtir»; a la mitad del mínimo, «crítico».
+- **Recibir pedido.** Al llegar mercancía se escribe la cantidad que entró y se
+  suma a lo que había; contar el inventario físico reemplaza el total. Son dos
+  botones distintos justo porque se confunden: recibir 200 vasos no es lo mismo
+  que quedarse con 200.
+- **Productos preparados.** Los lotes hechos en casa (jarabes, mermeladas,
+  pasteles) se registran con fecha de elaboración y de caducidad. El módulo
+  ordena por lo que vence primero y el aviso del último día **no desaparece
+  solo**: sigue en rojo hasta que alguien pulsa «Ya lo revisé». Mover la
+  caducidad reinicia el aviso.
+- **Modo barra a pantalla completa.** El tablero de comandas se puede poner a
+  pantalla completa para dejarlo en una pantalla fija. Los pedidos que llevan
+  más de 6 minutos se marcan, y pasados los 10 se resaltan en rojo.
 
 ## Despliegue
 
