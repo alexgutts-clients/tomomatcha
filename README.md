@@ -65,10 +65,9 @@ Tres decisiones que vale la pena conocer antes de tocar el código:
 
 **Instrucciones** (`/inicio`, arriba del todo) es el manual del sistema dentro de
 la propia aplicación: lo ve cualquier perfil —también el empleado, que en Inicio
-sólo vería el candado— y explica módulo por módulo cómo se opera, con índice,
-buscador y glosario. Arranca cerrado para no estorbar a quien ya sabe usarlo, y
-se arma con los datos reales del negocio (zona horaria, moneda, puntos, módulos
-encendidos) en lugar de describir un sistema genérico.
+sólo vería el candado— y resume en secciones plegables cómo se opera cada
+módulo. Está escrito corto a propósito, porque se lee de pie entre dos pedidos,
+y arranca cerrado para no estorbar a quien ya sabe usarlo.
 
 Al **cobrar** se crea la comanda, se descuenta el inventario según la receta del
 producto (incluida la leche elegida), se suman los puntos de lealtad y se
