@@ -5,6 +5,7 @@ import { r2PublicBase, isR2Configured } from "./r2";
 import { db, num } from "./supabase";
 import type {
   CashClose,
+  Category,
   Customer,
   ExtraOption,
   FeatureFlags,
@@ -25,6 +26,7 @@ import type {
 } from "./types";
 import type {
   CashCloseRow,
+  CategoryRow,
   CustomerRow,
   ExtraRecipeItemRow,
   ExtraRow,
@@ -83,6 +85,16 @@ function toFlags(row: SettingsRow): FeatureFlags {
     lealtad: row.flag_lealtad,
     resenasGoogle: row.flag_resenas_google,
     mercadoPago: row.flag_mercadopago,
+  };
+}
+
+function toCategory(row: CategoryRow): Category {
+  return {
+    id: row.id,
+    label: row.label,
+    emoji: row.emoji,
+    sortOrder: row.sort_order,
+    active: row.active,
   };
 }
 
@@ -423,6 +435,7 @@ export async function loadAppState(me: Staff): Promise<AppState> {
     ingredients,
     milks,
     extras,
+    categories,
     products,
     customers,
     orders,
@@ -440,6 +453,11 @@ export async function loadAppState(me: Staff): Promise<AppState> {
       .order("sort_order", { ascending: true })
       .order("name", { ascending: true }),
     loadExtras(),
+    supabase
+      .from("categories")
+      .select("*")
+      .order("sort_order", { ascending: true })
+      .order("label", { ascending: true }),
     loadProducts(),
     supabase
       .from("customers")
@@ -476,6 +494,11 @@ export async function loadAppState(me: Staff): Promise<AppState> {
   if (milks.error) {
     throw new Error(`No se pudieron leer las leches: ${milks.error.message}`);
   }
+  if (categories.error) {
+    throw new Error(
+      `No se pudieron leer las categorías: ${categories.error.message}`,
+    );
+  }
   if (customers.error) {
     throw new Error(`No se pudieron leer los clientes: ${customers.error.message}`);
   }
@@ -501,6 +524,7 @@ export async function loadAppState(me: Staff): Promise<AppState> {
     settings,
     flags: toFlags(settingsRow),
     staff: staffRows.data ? staffRows.data.map(toStaff) : [me],
+    categories: ((categories.data ?? []) as CategoryRow[]).map(toCategory),
     products,
     ingredients: ((ingredients.data ?? []) as IngredientRow[]).map(toIngredient),
     milks: ((milks.data ?? []) as MilkOptionRow[]).map(toMilk),

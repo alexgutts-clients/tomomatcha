@@ -130,6 +130,7 @@ El esquema vive en `supabase/migrations/` y es la única fuente de verdad:
 | `20260824000007_propina.sql` | Propina en el ticket y en el corte de caja |
 | `20260824000008_delete_order.sql` | `delete_order`: borrar una venta y sus efectos |
 | `20260824000009_delete_order_item.sql` | `delete_order_item`: quitar un renglón y rehacer cuentas |
+| `20260824000010_categorias.sql` | Categorías editables: tabla `categories` en lugar del enum |
 
 `lib/database.types.ts` es el espejo en TypeScript del esquema. **Al cambiar una
 migración hay que actualizarlo**, o el tipado dejará de proteger.
@@ -214,6 +215,17 @@ scripts/doctor.mjs  Revisión de conexiones
   receta. Antes de borrar se devuelven los insumos y se retiran los puntos, en
   ese orden, porque después ya no habría forma de saber cuánto devolver. Tampoco
   se puede si el día de ese ticket ya tiene el corte cerrado.
+- **Las categorías son datos, no código.** Eran un enum de Postgres, así que
+  vender mercancía o matcha en polvo pedía una migración. Ahora viven en la
+  tabla `categories` y se crean, renombran, ordenan y borran desde Productos. El
+  identificador se calcula del nombre la primera vez y ya no cambia — las filas
+  de `products` lo tienen escrito —, así que renombrar «Bakery» a «Panadería»
+  cambia lo que se lee, no a qué apunta. Una categoría *oculta* deja de
+  ofrecerse (no sale como filtro en la caja ni como opción al crear un producto)
+  pero sus productos se siguen vendiendo: apagar una sección no puede tumbar la
+  carta en silencio. Y no se puede borrar una categoría con productos dentro sin
+  decir a cuál se mudan; la llave foránea (`on delete restrict`) es la última
+  red, el aviso claro lo da la acción.
 - **Cuánto gasta cada producto.** La receta se edita desde Productos, y también
   al revés: en Inventario, cada insumo abre un panel de *consumo* que lista todos
   los productos que lo usan y con cuánto. Cambiar ahí «180 ml» actualiza la

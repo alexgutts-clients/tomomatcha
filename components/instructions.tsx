@@ -125,6 +125,9 @@ const SECTIONS: Section[] = [
     intro:
       "El menú se edita aquí: precios, fotos, recetas y qué puede personalizar el cliente.",
     puntos: [
+      "Las categorías las creas tú: mercancía, matcha para llevar, temporada. No sólo café.",
+      "Una categoría oculta deja de ofrecerse en la caja, pero sus productos se siguen vendiendo.",
+      "Al eliminar una categoría con productos, el sistema pregunta a cuál se mudan.",
       "El precio se cambia desde la misma lista, sin abrir el producto.",
       "Pausar un producto lo saca de la caja sin borrarlo.",
       "La receta dice cuánto insumo gasta cada producto: es lo que permite descontar solo.",

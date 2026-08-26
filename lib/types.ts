@@ -7,7 +7,12 @@
 
 export type Role = "admin" | "empleado";
 
-export type CategoryId = "matcha" | "cafe" | "te" | "bakery";
+/**
+ * Identificador de categoría: un slug de texto ('matcha', 'mercancia', …). Ya
+ * no es una unión cerrada porque las categorías las crea el administrador desde
+ * Productos; la lista viva está en `AppState.categories`.
+ */
+export type CategoryId = string;
 
 export type Unit = "g" | "ml" | "pza";
 
@@ -36,6 +41,16 @@ export interface Ingredient {
   isPackaging: boolean;
   /** Nivel objetivo de resurtido. Permite leer el umbral como porcentaje. */
   parLevel: number | null;
+  active: boolean;
+}
+
+export interface Category {
+  /** Slug estable. No cambia al renombrar: las ventas ya lo tienen escrito. */
+  id: CategoryId;
+  label: string;
+  emoji: string;
+  sortOrder: number;
+  /** Apagada: deja de ofrecerse, pero sus productos se siguen vendiendo. */
   active: boolean;
 }
 
@@ -236,6 +251,7 @@ export interface AppState {
   settings: Settings;
   flags: FeatureFlags;
   staff: Staff[];
+  categories: Category[];
   products: Product[];
   ingredients: Ingredient[];
   milks: MilkOption[];
@@ -267,17 +283,41 @@ export interface CheckoutPayload {
   cashReceived?: number;
 }
 
-export const CATEGORY_META: Record<
-  CategoryId,
-  { label: string; emoji: string }
-> = {
-  matcha: { label: "Matcha", emoji: "🍵" },
-  cafe: { label: "Café", emoji: "☕" },
-  te: { label: "Té e infusiones", emoji: "🫖" },
-  bakery: { label: "Bakery", emoji: "🥐" },
-};
+/** Emoji de una categoría recién creada, hasta que el administrador elija otro. */
+export const CATEGORY_FALLBACK_EMOJI = "🏷️";
 
-export const CATEGORY_IDS = Object.keys(CATEGORY_META) as CategoryId[];
+/**
+ * Nombre visible de una categoría. Un producto puede quedar apuntando a una
+ * categoría recién borrada mientras el cliente no ha recargado su estado, así
+ * que la búsqueda siempre tiene salida: se muestra el slug antes que nada.
+ */
+export function categoryLabel(
+  categories: Category[],
+  id: CategoryId,
+): string {
+  return categories.find((c) => c.id === id)?.label ?? id;
+}
+
+export function categoryEmoji(categories: Category[], id: CategoryId): string {
+  return categories.find((c) => c.id === id)?.emoji ?? CATEGORY_FALLBACK_EMOJI;
+}
+
+/**
+ * Slug a partir del nombre escrito: sin acentos, minúsculas y con guiones.
+ * El servidor lo vuelve a calcular — esto sólo sirve para que la interfaz pueda
+ * anticipar el identificador — pero la regla tiene que ser la misma en los dos
+ * lados, así que vive aquí y no duplicada.
+ */
+export function slugifyCategory(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40)
+    .replace(/-+$/g, "");
+}
 
 export const UNIT_LABELS: Record<Unit, string> = {
   g: "gramos",

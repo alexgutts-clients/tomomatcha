@@ -65,6 +65,19 @@ Business rules live in Postgres functions, not TypeScript:
 
 Tip (`orders.tip`) is the one amount that originates on the client. It is validated twice — `reqNumber(min: 0)` in the action, and capped at the discounted consumption inside `create_order`. It is stored in its own column, never dissolved into `total`, so the cash close can separate sale from tip. Discount applies to consumption only, never to the tip.
 
+### Categories are data, not an enum
+
+`…0010_categorias.sql` replaced the `category_id` enum with a `categories` table
+(`id` is a text slug, `products.category` is an FK with `on update cascade` /
+`on delete restrict`). Admins create, rename, reorder and delete them from
+Productos, so **never hardcode a category list in TypeScript** — read
+`AppState.categories` and use `categoryLabel` / `categoryEmoji` from
+`lib/types.ts`. A category's slug is derived from its name once (`slugifyCategory`)
+and never changes afterwards, because sold rows point at it. An *inactive*
+category stops being offered (POS filter, product form) but its products keep
+selling. `deleteCategory` refuses a non-empty category unless it is told which
+category the products move to.
+
 `lib/database.types.ts` is a hand-maintained mirror of the schema. **Changing a migration without updating it silently removes type safety.**
 
 `num()` in `lib/supabase.ts` exists because Postgres returns `numeric` as a string — every monetary value must pass through it.

@@ -7,8 +7,6 @@ import { useDerived, useStore } from "@/lib/store";
 import { money } from "@/lib/format";
 import { SHOW_LEALTAD_UI } from "@/lib/feature-visibility";
 import {
-  CATEGORY_IDS,
-  CATEGORY_META,
   PAYMENT_META,
   pointsFor,
   SERVICE_META,
@@ -125,11 +123,29 @@ export function PosModule() {
 
   /* ------------------------------ Catálogo -------------------------------- */
 
+  /*
+   * Sólo se ofrecen como filtro las categorías encendidas que además tienen
+   * algo que vender hoy: un chip que no lleva a ningún producto sobra en una
+   * barra con gente esperando. Si la categoría elegida desaparece (otro
+   * administrador la apagó desde Ajustes mientras el turno corría), la vista
+   * vuelve sola a «Todos» en lugar de quedarse vacía.
+   */
+  const visibleCategories = useMemo(
+    () =>
+      state.categories.filter(
+        (c) => c.active && state.products.some((p) => p.active && p.category === c.id),
+      ),
+    [state.categories, state.products],
+  );
+  const activeCategory = visibleCategories.some((c) => c.id === category)
+    ? category
+    : "todos";
+
   const term = search.trim().toLowerCase();
   const visibleProducts = state.products.filter(
     (p) =>
       p.active &&
-      (category === "todos" || p.category === category) &&
+      (activeCategory === "todos" || p.category === activeCategory) &&
       (!term ||
         p.name.toLowerCase().includes(term) ||
         p.desc.toLowerCase().includes(term)),
@@ -725,7 +741,7 @@ export function PosModule() {
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar bebida o bakery…"
+            placeholder="Buscar producto…"
             aria-label="Buscar producto"
             className="rounded-full px-5"
           />
@@ -734,30 +750,30 @@ export function PosModule() {
             <button
               type="button"
               onClick={() => setCategory("todos")}
-              aria-pressed={category === "todos"}
+              aria-pressed={activeCategory === "todos"}
               className={cx(
                 "focus-ring rounded-full px-4 py-2 text-xs font-extrabold transition",
-                category === "todos"
+                activeCategory === "todos"
                   ? "bg-ink text-paper"
                   : "border border-line bg-white text-ink hover:border-matcha",
               )}
             >
               Todos
             </button>
-            {CATEGORY_IDS.map((id) => (
+            {visibleCategories.map((c) => (
               <button
-                key={id}
+                key={c.id}
                 type="button"
-                onClick={() => setCategory(id)}
-                aria-pressed={category === id}
+                onClick={() => setCategory(c.id)}
+                aria-pressed={activeCategory === c.id}
                 className={cx(
                   "focus-ring rounded-full px-4 py-2 text-xs font-extrabold transition",
-                  category === id
+                  activeCategory === c.id
                     ? "bg-ink text-paper"
                     : "border border-line bg-white text-ink hover:border-matcha",
                 )}
               >
-                {CATEGORY_META[id].emoji} {CATEGORY_META[id].label}
+                {c.emoji} {c.label}
               </button>
             ))}
           </div>

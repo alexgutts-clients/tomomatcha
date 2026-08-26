@@ -35,6 +35,24 @@ export interface CatalogExtra {
   recipe: { ingredient: string; qty: number }[];
 }
 
+export interface CatalogCategory {
+  id: string;
+  label: string;
+  emoji: string;
+}
+
+/**
+ * Las categorías del catálogo sugerido. Existen ya en la base desde la
+ * migración `…0010_categorias.sql`; se repiten aquí para que cargar el catálogo
+ * funcione aunque el administrador las haya borrado antes de estrenar la carta.
+ */
+export const CATALOG_CATEGORIES: CatalogCategory[] = [
+  { id: "matcha", label: "Matcha", emoji: "🍵" },
+  { id: "cafe", label: "Café", emoji: "☕" },
+  { id: "te", label: "Té e infusiones", emoji: "🫖" },
+  { id: "bakery", label: "Bakery", emoji: "🥐" },
+];
+
 export interface CatalogProduct {
   name: string;
   category: CategoryId;

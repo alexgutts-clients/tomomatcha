@@ -7,6 +7,7 @@ import {
   optUrl,
   reqId,
   reqNumber,
+  reqSlug,
   reqText,
   reqTimezone,
   run,
@@ -14,6 +15,7 @@ import {
 } from "./action-utils";
 import { requireAdmin } from "./auth";
 import {
+  CATALOG_CATEGORIES,
   CATALOG_EXTRAS,
   CATALOG_INGREDIENTS,
   CATALOG_MILKS,
@@ -32,7 +34,13 @@ import {
   r2Bucket,
   type MediaPurpose,
 } from "./r2";
-import { CATEGORY_IDS, type CategoryId, type FeatureFlags, type Role } from "./types";
+import {
+  CATEGORY_FALLBACK_EMOJI,
+  slugifyCategory,
+  type CategoryId,
+  type FeatureFlags,
+  type Role,
+} from "./types";
 
 /* ============================================================================
  * Acciones de administración: carta, insumos globales, ajustes, equipo y media.
@@ -125,7 +133,7 @@ export async function saveProduct(
 
     const patch = {
       name: reqText(input.name, "El nombre del producto", 120),
-      category: oneOf(input.category, CATEGORY_IDS, "La categoría"),
+      category: await requireCategory(input.category),
       price: reqNumber(input.price, "El precio", { min: 0, max: 100_000 }),
       description: optText(input.desc, 300) ?? "",
       emoji: (optText(input.emoji, 8) ?? "🍵").slice(0, 8),
@@ -275,6 +283,230 @@ export async function deleteProduct(
     if (error) throw new Error(error.message);
 
     return { sold: sold.count ?? 0 };
+  });
+}
+
+/* --------------------------------- Categorías -------------------------------- */
+
+/*
+ * Las categorías son datos, no una constante del código: la cafetería vende
+ * mercancía, matcha en polvo y lo que se le ocurra mañana, y nada de eso puede
+ * esperar a un despliegue. Lo único que no se edita es el identificador — las
+ * filas de `products` lo tienen escrito —, así que renombrar «Bakery» a
+ * «Panadería» cambia lo que se lee, no a qué apunta.
+ */
+
+export interface CategoryInput {
+  /** Sólo al editar. Al crear, el identificador se calcula del nombre. */
+  id?: string;
+  label: string;
+  emoji?: string;
+  active: boolean;
+}
+
+/**
+ * Identificador libre a partir del nombre, evitando los que ya existen. El
+ * sufijo numérico es feo pero honesto: dos categorías con nombres que se
+ * reducen al mismo slug («Té frío» y «Te frio») siguen siendo dos categorías.
+ */
+async function freeCategoryId(label: string): Promise<string> {
+  const base = slugifyCategory(label) || "categoria";
+  const supabase = db();
+  const { data, error } = await supabase.from("categories").select("id");
+  if (error) throw new Error(error.message);
+  // «todos» es el filtro «ver toda la carta» en el punto de venta: una
+  // categoría con ese identificador se pisaría con él.
+  const taken = new Set(["todos", ...(data ?? []).map((row) => row.id)]);
+
+  if (!taken.has(base)) return base;
+  for (let n = 2; n < 100; n += 1) {
+    const candidate = `${base.slice(0, 37)}-${n}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  throw new ValidationError("Demasiadas categorías con ese nombre.");
+}
+
+/** La categoría que manda el cliente tiene que existir hoy, no cuando cargó. */
+async function requireCategory(value: unknown): Promise<CategoryId> {
+  const id = reqSlug(value, "La categoría");
+  const { data, error } = await db()
+    .from("categories")
+    .select("id")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) {
+    throw new ValidationError("Esa categoría ya no existe. Elige otra.");
+  }
+  return data.id;
+}
+
+export async function saveCategory(
+  input: CategoryInput,
+): Promise<ActionResult<string>> {
+  return run(requireAdmin, async () => {
+    const patch = {
+      label: reqText(input.label, "El nombre de la categoría", 60),
+      emoji: (optText(input.emoji, 8) ?? CATEGORY_FALLBACK_EMOJI).slice(0, 8),
+      active: !!input.active,
+    };
+
+    const supabase = db();
+
+    if (input.id) {
+      const id = reqSlug(input.id, "La categoría");
+      const { data, error } = await supabase
+        .from("categories")
+        .update(patch)
+        .eq("id", id)
+        .select("id")
+        .maybeSingle();
+      if (error) throw new Error(translateCategoryConflict(error.message));
+      // Sin fila devuelta la categoría se borró desde otra caja: decirlo es
+      // mejor que anunciar un guardado que no ocurrió.
+      if (!data) throw new ValidationError("La categoría ya no existe.");
+      return id;
+    }
+
+    // Al final de la lista: el orden lo decide después el administrador.
+    const last = await supabase
+      .from("categories")
+      .select("sort_order")
+      .order("sort_order", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (last.error) throw new Error(last.error.message);
+
+    const { data, error } = await supabase
+      .from("categories")
+      .insert({
+        ...patch,
+        id: await freeCategoryId(patch.label),
+        sort_order: (last.data?.sort_order ?? -1) + 1,
+      })
+      .select("id")
+      .single();
+    if (error) throw new Error(translateCategoryConflict(error.message));
+    return data!.id;
+  });
+}
+
+function translateCategoryConflict(message: string): string {
+  return /categories_label_key/.test(message)
+    ? "Ya existe una categoría con ese nombre."
+    : message;
+}
+
+export async function toggleCategory(
+  categoryId: string,
+): Promise<ActionResult<boolean>> {
+  return run(requireAdmin, async () => {
+    const id = reqSlug(categoryId, "La categoría");
+    const supabase = db();
+    const current = await supabase
+      .from("categories")
+      .select("active")
+      .eq("id", id)
+      .maybeSingle();
+    if (current.error) throw new Error(current.error.message);
+    if (!current.data) throw new ValidationError("La categoría no existe.");
+
+    const next = !current.data.active;
+    const { error } = await supabase
+      .from("categories")
+      .update({ active: next })
+      .eq("id", id);
+    if (error) throw new Error(error.message);
+    return next;
+  });
+}
+
+/**
+ * Sube o baja una categoría un lugar. Reescribe el orden completo (0, 1, 2, …)
+ * en vez de intercambiar dos números, porque así los empates que pudieran venir
+ * de la migración o de una carga masiva se enderezan solos.
+ */
+export async function moveCategory(
+  categoryId: string,
+  direction: "arriba" | "abajo",
+): Promise<ActionResult<undefined>> {
+  return run(requireAdmin, async () => {
+    const id = reqSlug(categoryId, "La categoría");
+    const dir = oneOf(direction, ["arriba", "abajo"] as const, "La dirección");
+
+    const supabase = db();
+    const { data, error } = await supabase
+      .from("categories")
+      .select("id")
+      .order("sort_order", { ascending: true })
+      .order("label", { ascending: true });
+    if (error) throw new Error(error.message);
+
+    const list = (data ?? []).map((row) => row.id);
+    const from = list.indexOf(id);
+    if (from < 0) throw new ValidationError("La categoría no existe.");
+
+    const to = dir === "arriba" ? from - 1 : from + 1;
+    if (to < 0 || to >= list.length) return undefined;
+
+    list.splice(to, 0, list.splice(from, 1)[0]);
+
+    for (const [index, catId] of list.entries()) {
+      const { error: writeError } = await supabase
+        .from("categories")
+        .update({ sort_order: index })
+        .eq("id", catId);
+      if (writeError) throw new Error(writeError.message);
+    }
+    return undefined;
+  });
+}
+
+/**
+ * Borrar una categoría con productos dentro dejaría la carta sin dónde
+ * colgarlos, así que o está vacía o se dice a qué categoría se mudan. La llave
+ * foránea (`on delete restrict`) es la última red; el aviso claro se da aquí.
+ */
+export async function deleteCategory(
+  categoryId: string,
+  moveToCategoryId?: string,
+): Promise<ActionResult<{ moved: number }>> {
+  return run(requireAdmin, async () => {
+    const id = reqSlug(categoryId, "La categoría");
+    const supabase = db();
+
+    const used = await supabase
+      .from("products")
+      .select("id", { count: "exact", head: true })
+      .eq("category", id);
+    if (used.error) throw new Error(used.error.message);
+
+    const count = used.count ?? 0;
+    let moved = 0;
+
+    if (count > 0) {
+      if (!moveToCategoryId) {
+        throw new ValidationError(
+          `Esa categoría tiene ${count} producto${count === 1 ? "" : "s"}. Elige a qué categoría pasarlos antes de eliminarla.`,
+        );
+      }
+      const target = await requireCategory(moveToCategoryId);
+      if (target === id) {
+        throw new ValidationError(
+          "Elige una categoría distinta a la que vas a eliminar.",
+        );
+      }
+      const { error } = await supabase
+        .from("products")
+        .update({ category: target })
+        .eq("category", id);
+      if (error) throw new Error(error.message);
+      moved = count;
+    }
+
+    const { error } = await supabase.from("categories").delete().eq("id", id);
+    if (error) throw new Error(error.message);
+    return { moved };
   });
 }
 
@@ -542,6 +774,23 @@ export async function seedCatalog(): Promise<ActionResult<{ products: number }>>
       throw new ValidationError(
         "Ya hay productos en la carta. El catálogo inicial sólo se puede cargar cuando está vacía.",
       );
+    }
+
+    /* Categorías: el catálogo cuelga de ellas, así que van primero. */
+    for (const [index, category] of CATALOG_CATEGORIES.entries()) {
+      const exists = await supabase
+        .from("categories")
+        .select("id")
+        .eq("id", category.id)
+        .maybeSingle();
+      if (exists.data) continue;
+      const { error } = await supabase.from("categories").insert({
+        id: category.id,
+        label: category.label,
+        emoji: category.emoji,
+        sort_order: index,
+      });
+      if (error) throw new Error(error.message);
     }
 
     /* Insumos */

@@ -298,7 +298,9 @@ function productFromItem(item: OrderItem): Product {
   return {
     id: item.productId ?? `eliminado:${item.name}`,
     name: item.name,
-    category: "matcha",
+    // El renglón no guarda la categoría, y el producto ya no existe para
+    // preguntársela: se deja vacía y los reportes lo nombran «fuera del menú».
+    category: "",
     price: item.unitPrice,
     desc: "",
     emoji: item.emoji,

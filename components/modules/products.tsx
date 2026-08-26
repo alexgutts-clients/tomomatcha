@@ -2,18 +2,23 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  deleteCategory,
   deleteExtra,
   deleteMilk,
   deleteProduct,
+  moveCategory,
+  saveCategory,
   saveExtra,
   saveMilk,
   saveProduct,
   setProductMod,
   setProductPrice,
+  toggleCategory,
   toggleExtra,
   toggleMilk,
   toggleProduct,
   removeProductImage,
+  type CategoryInput,
   type ExtraInput,
   type MilkInput,
   type ProductInput,
@@ -21,8 +26,10 @@ import {
 import { useStore } from "@/lib/store";
 import { money, unitLabel } from "@/lib/format";
 import {
-  CATEGORY_IDS,
-  CATEGORY_META,
+  CATEGORY_FALLBACK_EMOJI,
+  categoryLabel,
+  slugifyCategory,
+  type Category,
   type CategoryId,
   type ModifierSupport,
   type Product,
@@ -63,7 +70,7 @@ const MOD_LABELS: Record<keyof ModifierSupport, string> = {
 
 const EMPTY_PRODUCT: ProductInput = {
   name: "",
-  category: "matcha",
+  category: "",
   price: 0,
   desc: "",
   emoji: "🍵",
@@ -87,6 +94,11 @@ export function ProductsModule() {
   const [productPhoto, setProductPhoto] = useState<File | null>(null);
   const [milkForm, setMilkForm] = useState<MilkInput | null>(null);
   const [extraForm, setExtraForm] = useState<ExtraInput | null>(null);
+  const [categoryForm, setCategoryForm] = useState<CategoryInput | null>(null);
+  // Categoría en trámite de borrado que todavía tiene productos: hay que decir
+  // a dónde se mudan antes de que desaparezca.
+  const [categoryToEmpty, setCategoryToEmpty] = useState<Category | null>(null);
+  const [moveTarget, setMoveTarget] = useState("");
 
   if (state.role === "empleado") return <AccessGate module="Productos" />;
 
@@ -119,6 +131,28 @@ export function ProductsModule() {
     category === "todos"
       ? state.products
       : state.products.filter((p) => p.category === category);
+
+  const categoryCount = (id: CategoryId) =>
+    state.products.filter((p) => p.category === id).length;
+
+  /*
+   * Un producto tiene que nacer en alguna categoría: si no hay ninguna, el
+   * botón de «nuevo producto» manda a crearla primero en vez de abrir un
+   * formulario que no se podría guardar.
+   */
+  const newProduct = () => {
+    const first = state.categories.find((c) => c.active) ?? state.categories[0];
+    if (!first) {
+      setCategoryForm({ label: "", emoji: CATEGORY_FALLBACK_EMOJI, active: true });
+      notify(
+        "Primero una categoría",
+        "Cada producto va en una categoría. Crea la primera y seguimos.",
+        "warn",
+      );
+      return;
+    }
+    setProductForm({ ...EMPTY_PRODUCT, category: first.id, recipe: [] });
+  };
 
   const ingredientName = (id: string) =>
     state.ingredients.find((i) => i.id === id)?.name ?? "Insumo eliminado";
@@ -195,6 +229,38 @@ export function ProductsModule() {
     setProductForm(null);
   };
 
+  const submitCategory = async () => {
+    if (!categoryForm) return;
+    const saved = await submit(() => saveCategory(categoryForm), {
+      title: categoryForm.id ? "Categoría actualizada" : "Categoría creada",
+      detail: categoryForm.label,
+    });
+    if (saved) setCategoryForm(null);
+  };
+
+  /** Borrado con mudanza: los productos de la categoría pasan a otra. */
+  const submitCategoryMove = async () => {
+    if (!categoryToEmpty || !moveTarget) return;
+    const target = state.categories.find((c) => c.id === moveTarget);
+    const done = await submit(
+      () => deleteCategory(categoryToEmpty.id, moveTarget),
+      {
+        title: "Categoría eliminada",
+        detail: (data) =>
+          `${data.moved} producto${data.moved === 1 ? "" : "s"} ahora en ${target?.label ?? moveTarget}`,
+      },
+    );
+    if (done) {
+      setCategoryToEmpty(null);
+      setMoveTarget("");
+    }
+  };
+
+  const askCategoryDelete = (c: Category) => {
+    setCategoryToEmpty(c);
+    setMoveTarget(state.categories.find((other) => other.id !== c.id)?.id ?? "");
+  };
+
   const submitMilk = async () => {
     if (!milkForm) return;
     const saved = await submit(() => saveMilk(milkForm), {
@@ -220,10 +286,7 @@ export function ProductsModule() {
         title="Productos"
         desc="El menú vive aquí: crea productos, cambia precios, define recetas y decide qué se puede personalizar. Sin depender de un desarrollador."
         actions={
-          <Button
-            variant="matcha"
-            onClick={() => setProductForm({ ...EMPTY_PRODUCT, recipe: [] })}
-          >
+          <Button variant="matcha" onClick={newProduct}>
             + Nuevo producto
           </Button>
         }
@@ -235,10 +298,7 @@ export function ProductsModule() {
           title="La carta está vacía"
           desc="Crea tu primer producto, o carga el catálogo sugerido de TomoMatcha desde Ajustes y ajústalo a tu gusto."
           action={
-            <Button
-              variant="matcha"
-              onClick={() => setProductForm({ ...EMPTY_PRODUCT, recipe: [] })}
-            >
+            <Button variant="matcha" onClick={newProduct}>
               Crear el primero
             </Button>
           }
@@ -260,8 +320,15 @@ export function ProductsModule() {
             />
             <Stat
               label="Categorías"
-              value={CATEGORY_IDS.length}
-              hint="Matcha, café, té y bakery"
+              value={state.categories.length}
+              hint={
+                state.categories.length
+                  ? state.categories
+                      .slice(0, 3)
+                      .map((c) => c.label)
+                      .join(", ") + (state.categories.length > 3 ? "…" : "")
+                  : "Aún no hay categorías"
+              }
             />
             <Stat
               label="Precio promedio"
@@ -285,21 +352,25 @@ export function ProductsModule() {
             >
               Todos
             </button>
-            {CATEGORY_IDS.map((id) => (
+            {state.categories.map((c) => (
               <button
-                key={id}
+                key={c.id}
                 type="button"
-                aria-pressed={category === id}
-                onClick={() => setCategory(id)}
+                aria-pressed={category === c.id}
+                onClick={() => setCategory(c.id)}
                 className={cx(
                   "focus-ring inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-extrabold transition",
-                  category === id
+                  category === c.id
                     ? "bg-ink text-paper"
                     : "border border-line bg-white text-muted hover:border-matcha hover:text-matcha-deep",
+                  !c.active && category !== c.id && "opacity-60",
                 )}
               >
-                <span aria-hidden>{CATEGORY_META[id].emoji}</span>
-                {CATEGORY_META[id].label}
+                <span aria-hidden>{c.emoji}</span>
+                {c.label}
+                {!c.active ? (
+                  <span className="text-[10px] font-bold opacity-70">oculta</span>
+                ) : null}
               </button>
             ))}
           </div>
@@ -324,7 +395,7 @@ export function ProductsModule() {
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-extrabold text-ink">{p.name}</p>
                         <Badge tone="neutral">
-                          {CATEGORY_META[p.category].label}
+                          {categoryLabel(state.categories, p.category)}
                         </Badge>
                         {p.popular ? <Badge tone="matcha">Popular</Badge> : null}
                         {!p.active ? (
@@ -540,6 +611,152 @@ export function ProductsModule() {
         </>
       )}
 
+      {/* ------------------------------- Categorías -------------------------------- */}
+      <Card>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="eyebrow">Secciones de la carta</p>
+            <h2 className="display mt-1 text-xl text-ink">Categorías</h2>
+            <p className="mt-1 max-w-lg text-xs leading-5 text-muted">
+              La carta no está casada con el café: crea las secciones que vendas
+              — mercancía, matcha para llevar, temporada — y ordénalas como
+              quieres verlas en el punto de venta.
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() =>
+              setCategoryForm({
+                label: "",
+                emoji: CATEGORY_FALLBACK_EMOJI,
+                active: true,
+              })
+            }
+          >
+            + Nueva categoría
+          </Button>
+        </div>
+
+        <ul className="mt-5 space-y-2.5">
+          {state.categories.map((c, index) => {
+            const count = categoryCount(c.id);
+            return (
+              <li
+                key={c.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl2 border border-line bg-paper px-3 py-2.5"
+              >
+                <div className="flex min-w-0 items-start gap-3">
+                  <div className="flex shrink-0 flex-col">
+                    <button
+                      type="button"
+                      disabled={busy || index === 0}
+                      aria-label={`Subir ${c.label}`}
+                      onClick={() =>
+                        void submit(() => moveCategory(c.id, "arriba"), {
+                          silent: true,
+                        })
+                      }
+                      className="focus-ring rounded text-[11px] leading-4 text-muted hover:text-ink disabled:opacity-30"
+                    >
+                      ▲
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy || index === state.categories.length - 1}
+                      aria-label={`Bajar ${c.label}`}
+                      onClick={() =>
+                        void submit(() => moveCategory(c.id, "abajo"), {
+                          silent: true,
+                        })
+                      }
+                      className="focus-ring rounded text-[11px] leading-4 text-muted hover:text-ink disabled:opacity-30"
+                    >
+                      ▼
+                    </button>
+                  </div>
+
+                  <span className="text-xl" aria-hidden>
+                    {c.emoji}
+                  </span>
+
+                  <div className="min-w-0">
+                    <p className="flex flex-wrap items-center gap-2 text-sm font-bold text-ink">
+                      {c.label}
+                      {!c.active ? <Badge tone="danger">Oculta</Badge> : null}
+                    </p>
+                    <p className="text-[11px] text-muted">
+                      {count
+                        ? `${count} producto${count === 1 ? "" : "s"}`
+                        : "Sin productos todavía"}
+                    </p>
+                    <div className="mt-1 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCategoryForm({
+                            id: c.id,
+                            label: c.label,
+                            emoji: c.emoji,
+                            active: c.active,
+                          })
+                        }
+                        className="focus-ring rounded-full text-[11px] font-extrabold text-muted hover:text-ink"
+                      >
+                        Editar
+                      </button>
+                      {count ? (
+                        <button
+                          type="button"
+                          disabled={busy || state.categories.length < 2}
+                          onClick={() => askCategoryDelete(c)}
+                          className="focus-ring rounded-full text-[11px] font-extrabold text-danger hover:opacity-80 disabled:opacity-40"
+                        >
+                          Eliminar…
+                        </button>
+                      ) : (
+                        <ConfirmButton
+                          label="Eliminar"
+                          confirmLabel="Sí"
+                          disabled={busy}
+                          onConfirm={() =>
+                            void submit(() => deleteCategory(c.id), {
+                              title: "Categoría eliminada",
+                              detail: c.label,
+                            })
+                          }
+                        />
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <Toggle
+                  checked={c.active}
+                  disabled={busy}
+                  onChange={() =>
+                    void submit(() => toggleCategory(c.id), { silent: true })
+                  }
+                  label={`Ofrecer la categoría ${c.label}`}
+                />
+              </li>
+            );
+          })}
+          {!state.categories.length ? (
+            <li className="rounded-xl2 border border-dashed border-line px-4 py-8 text-center text-xs leading-5 text-muted">
+              Sin categorías: crea la primera para poder dar de alta productos.
+            </li>
+          ) : null}
+        </ul>
+
+        <p className="mt-4 text-[11px] leading-5 text-muted">
+          Una categoría oculta deja de ofrecerse — no sale como filtro en el
+          punto de venta ni como opción al crear un producto — pero lo que ya
+          está dentro se sigue vendiendo. Para sacar productos del menú, páusalos
+          uno a uno.
+        </p>
+      </Card>
+
       {/* --------------------- Opciones globales de personalización --------------------- */}
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -743,6 +960,7 @@ export function ProductsModule() {
           <ProductForm
             value={productForm}
             onChange={setProductForm}
+            categories={state.categories}
             ingredients={state.ingredients}
             currency={currency}
             busy={busy}
@@ -755,6 +973,123 @@ export function ProductsModule() {
             onCancel={closeProductForm}
             onSave={() => void submitProduct()}
           />
+        ) : null}
+      </Modal>
+
+      {/* ---------------------------- Modal de categoría --------------------------- */}
+      <Modal
+        open={!!categoryForm}
+        onClose={() => setCategoryForm(null)}
+        title={categoryForm?.id ? "Editar categoría" : "Nueva categoría"}
+      >
+        {categoryForm ? (
+          <div className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-[1fr_7rem]">
+              <Field label="Nombre">
+                <Input
+                  autoFocus
+                  value={categoryForm.label}
+                  maxLength={60}
+                  onChange={(e) =>
+                    setCategoryForm({ ...categoryForm, label: e.target.value })
+                  }
+                  placeholder="Ej. Mercancía"
+                />
+              </Field>
+              <Field label="Emoji" hint="Se ve en el filtro">
+                <Input
+                  value={categoryForm.emoji ?? ""}
+                  maxLength={8}
+                  onChange={(e) =>
+                    setCategoryForm({ ...categoryForm, emoji: e.target.value })
+                  }
+                  placeholder={CATEGORY_FALLBACK_EMOJI}
+                  className="text-center text-lg"
+                />
+              </Field>
+            </div>
+
+            <label className="flex items-center justify-between gap-3 rounded-xl2 border border-line bg-paper px-4 py-2.5">
+              <span className="text-xs font-bold text-ink">
+                Ofrecer en el punto de venta
+              </span>
+              <Toggle
+                checked={categoryForm.active}
+                onChange={(v) =>
+                  setCategoryForm({ ...categoryForm, active: v })
+                }
+                label="Ofrecer la categoría en el punto de venta"
+              />
+            </label>
+
+            <p className="text-[11px] leading-5 text-muted">
+              {categoryForm.id
+                ? "El nombre se puede cambiar cuando quieras: los productos siguen donde están."
+                : `Se guardará con el identificador «${slugifyCategory(categoryForm.label) || "categoria"}» (o parecido, si ya está ocupado). Ese identificador ya no cambia, aunque después le cambies el nombre.`}
+            </p>
+
+            <div className="flex justify-end gap-2 border-t border-line pt-4">
+              <Button variant="ghost" onClick={() => setCategoryForm(null)}>
+                Cancelar
+              </Button>
+              <Button
+                variant="matcha"
+                disabled={busy || !categoryForm.label.trim()}
+                onClick={() => void submitCategory()}
+              >
+                {categoryForm.id ? "Guardar" : "Crear categoría"}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
+      {/* ------------------ Eliminar categoría con productos dentro ----------------- */}
+      <Modal
+        open={!!categoryToEmpty}
+        onClose={() => setCategoryToEmpty(null)}
+        title="Eliminar categoría"
+      >
+        {categoryToEmpty ? (
+          <div className="space-y-4">
+            <p className="text-sm leading-6 text-ink">
+              «{categoryToEmpty.label}» tiene{" "}
+              <strong>
+                {categoryCount(categoryToEmpty.id)} producto
+                {categoryCount(categoryToEmpty.id) === 1 ? "" : "s"}
+              </strong>
+              . No se pierden: dime a qué categoría pasan y se mudan antes de
+              borrarla.
+            </p>
+
+            <Field label="Pasar los productos a">
+              <Select
+                value={moveTarget}
+                onChange={(e) => setMoveTarget(e.target.value)}
+              >
+                {state.categories
+                  .filter((c) => c.id !== categoryToEmpty.id)
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.emoji} {c.label}
+                    </option>
+                  ))}
+              </Select>
+            </Field>
+
+            <div className="flex justify-end gap-2 border-t border-line pt-4">
+              <Button variant="ghost" onClick={() => setCategoryToEmpty(null)}>
+                Cancelar
+              </Button>
+              <Button
+                variant="danger"
+                disabled={busy || !moveTarget}
+                onClick={() => void submitCategoryMove()}
+              >
+                Mudar y eliminar
+              </Button>
+            </div>
+          </div>
         ) : null}
       </Modal>
 
@@ -1008,6 +1343,7 @@ function FilePickButton({
 function ProductForm({
   value,
   onChange,
+  categories,
   ingredients,
   currency,
   busy,
@@ -1020,6 +1356,7 @@ function ProductForm({
 }: {
   value: ProductInput;
   onChange: (next: ProductInput) => void;
+  categories: Category[];
   ingredients: { id: string; name: string; unit: string }[];
   currency: string;
   busy: boolean;
@@ -1142,15 +1479,20 @@ function ProductForm({
         <Field label="Categoría">
           <Select
             value={value.category}
-            onChange={(e) =>
-              onChange({ ...value, category: e.target.value as CategoryId })
-            }
+            onChange={(e) => onChange({ ...value, category: e.target.value })}
           >
-            {CATEGORY_IDS.map((id) => (
-              <option key={id} value={id}>
-                {CATEGORY_META[id].emoji} {CATEGORY_META[id].label}
-              </option>
-            ))}
+            {/*
+              Las categorías ocultas no se ofrecen, salvo la del propio producto:
+              editar un precio no tiene por qué mudarlo de sección sin avisar.
+            */}
+            {categories
+              .filter((c) => c.active || c.id === value.category)
+              .map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.emoji} {c.label}
+                  {c.active ? "" : " · oculta"}
+                </option>
+              ))}
           </Select>
         </Field>
         <Field label={`Precio (${currency})`}>

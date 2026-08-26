@@ -18,7 +18,11 @@ export type Json =
 
 export type StaffRoleDb = "admin" | "empleado";
 export type UnitDb = "g" | "ml" | "pza";
-export type CategoryDb = "matcha" | "cafe" | "te" | "bakery";
+/**
+ * La categoría dejó de ser un enum: `categories.id` es un slug de texto que el
+ * administrador crea desde Productos (ver `…0010_categorias.sql`).
+ */
+export type CategoryDb = string;
 export type OrderStatusDb =
   | "nuevo"
   | "preparando"
@@ -112,6 +116,16 @@ export type ExtraRecipeItemRow = {
   extra_id: string;
   ingredient_id: string;
   qty: number;
+}
+
+export type CategoryRow = {
+  id: string;
+  label: string;
+  emoji: string;
+  sort_order: number;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export type ProductRow = {
@@ -283,7 +297,8 @@ export type Database = {
         ExtraRecipeItemRow,
         "extra_id" | "ingredient_id" | "qty"
       >;
-      products: Table<ProductRow, "name">;
+      categories: Table<CategoryRow, "id" | "label">;
+      products: Table<ProductRow, "name" | "category">;
       product_recipe_items: Table<ProductRecipeItemRow, "product_id" | "qty">;
       customers: Table<CustomerRow, "name">;
       orders: Table<OrderRow, "folio">;
@@ -353,7 +368,6 @@ export type Database = {
       staff_role: StaffRoleDb;
       service_mode: ServiceModeDb;
       unit_type: UnitDb;
-      category_id: CategoryDb;
       order_status: OrderStatusDb;
       payment_method: PaymentDb;
       movement_reason: MovementReasonDb;

@@ -95,6 +95,20 @@ export function optId(value: unknown): string | null {
   return reqId(value);
 }
 
+const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
+
+/**
+ * Identificador de texto (no uuid) como el de las categorías: minúsculas,
+ * dígitos y guiones. La forma la impone también un `check` en la base, así que
+ * validarlo aquí es lo que evita el viaje perdido, no la protección.
+ */
+export function reqSlug(value: unknown, label = "El identificador"): string {
+  if (typeof value !== "string" || !SLUG_RE.test(value)) {
+    throw new ValidationError(`${label} no es válido.`);
+  }
+  return value;
+}
+
 export function oneOf<T extends string>(
   value: unknown,
   allowed: readonly T[],
