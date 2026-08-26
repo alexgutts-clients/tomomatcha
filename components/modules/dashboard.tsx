@@ -6,6 +6,7 @@ import { money, shortDate, time, weekday } from "@/lib/format";
 import { STATUS_META, daysUntil, expiryLevel } from "@/lib/types";
 import { SHOW_LEALTAD_UI } from "@/lib/feature-visibility";
 import { Icons } from "@/components/icons";
+import { InstructionsPanel } from "@/components/instructions";
 import {
   AccessGate,
   Badge,
@@ -29,7 +30,16 @@ export function DashboardModule() {
     week,
   } = useDerived();
 
-  if (state.role === "empleado") return <AccessGate module="Inicio" />;
+  // El manual va antes del candado: un empleado nuevo entra a Inicio y lo
+  // primero que necesita no es el resumen del día, es saber cómo se usa esto.
+  if (state.role === "empleado") {
+    return (
+      <div className="space-y-6">
+        <InstructionsPanel />
+        <AccessGate module="Inicio" />
+      </div>
+    );
+  }
 
   const hour = Number(
     new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hour12: false, timeZone: tz })
@@ -55,6 +65,8 @@ export function DashboardModule() {
 
   return (
     <div className="space-y-6">
+      <InstructionsPanel />
+
       <PageHeader
         eyebrow={`${state.settings.branchName} · resumen del día`}
         title={`${greeting}, ${state.me.fullName.split(" ")[0]}`}
