@@ -62,23 +62,74 @@ console.log(`\n${C.bold}TomoMatcha · revisión de conexiones${C.reset}\n`);
 const supabaseUrl = env("SUPABASE_URL") ?? env("NEXT_PUBLIC_SUPABASE_URL");
 const serviceKey = env("SUPABASE_SERVICE_ROLE_KEY");
 
-const TABLES = [
-  "staff",
-  "settings",
-  "ingredients",
-  "milk_options",
-  "extras",
-  "extra_recipe_items",
-  "products",
-  "product_recipe_items",
-  "customers",
-  "orders",
-  "order_items",
-  "inventory_movements",
-  "loyalty_transactions",
-  "cash_closes",
-  "media_assets",
+// El esquema que la aplicación da por hecho, cada pieza junto a la migración
+// que la crea. Esta lista no es decorativa: lo que no aparezca aquí no se
+// revisa, y una tabla sin revisar deja pasar el doctor en verde mientras la
+// aplicación revienta al abrirla — que es exactamente lo que ocurrió con
+// `categories`. Al añadir una migración que cree una tabla o una columna,
+// añádela también aquí.
+const MIGRATIONS = {
+  core: "20260824000001_core_schema.sql",
+  rpc: "20260824000002_rpc.sql",
+  cancel: "20260824000003_cancel_order.sql",
+  etapa1: "20260824000005_etapa1_features.sql",
+  propina: "20260824000007_propina.sql",
+  deleteOrder: "20260824000008_delete_order.sql",
+  deleteItem: "20260824000009_delete_order_item.sql",
+  categorias: "20260824000010_categorias.sql",
+};
+
+const TABLES = {
+  staff: MIGRATIONS.core,
+  settings: MIGRATIONS.core,
+  ingredients: MIGRATIONS.core,
+  milk_options: MIGRATIONS.core,
+  extras: MIGRATIONS.core,
+  extra_recipe_items: MIGRATIONS.core,
+  products: MIGRATIONS.core,
+  product_recipe_items: MIGRATIONS.core,
+  customers: MIGRATIONS.core,
+  orders: MIGRATIONS.core,
+  order_items: MIGRATIONS.core,
+  inventory_movements: MIGRATIONS.core,
+  loyalty_transactions: MIGRATIONS.core,
+  cash_closes: MIGRATIONS.core,
+  media_assets: MIGRATIONS.core,
+  prepared_items: MIGRATIONS.etapa1,
+  categories: MIGRATIONS.categorias,
+};
+
+// Una migración que sólo añade columnas no crea ninguna tabla: sin esto, media
+// migración aplicada pasaría desapercibida igual que una entera.
+const COLUMNS = [
+  { table: "ingredients", column: "is_packaging", migration: MIGRATIONS.etapa1 },
+  { table: "ingredients", column: "par_level", migration: MIGRATIONS.etapa1 },
+  { table: "orders", column: "service_mode", migration: MIGRATIONS.etapa1 },
+  { table: "orders", column: "tip", migration: MIGRATIONS.propina },
+  { table: "cash_closes", column: "tips_cash", migration: MIGRATIONS.propina },
+  { table: "cash_closes", column: "tips_total", migration: MIGRATIONS.propina },
 ];
+
+// Las funciones son la otra mitad del esquema: ahí vive la lógica de negocio, y
+// si falta una, la operación que la usa falla en el peor momento posible.
+const FUNCTIONS = {
+  business_day: MIGRATIONS.rpc,
+  create_order: MIGRATIONS.rpc,
+  close_cash: MIGRATIONS.rpc,
+  adjust_stock: MIGRATIONS.rpc,
+  adjust_points: MIGRATIONS.rpc,
+  cancel_order: MIGRATIONS.cancel,
+  delete_order: MIGRATIONS.deleteOrder,
+  delete_order_item: MIGRATIONS.deleteItem,
+};
+
+// Nombra los archivos pendientes, sin repetirlos y en el orden en que se
+// aplican, para no mandar a revisar la carpeta entera a ciegas.
+const pending = (items) =>
+  [...new Set(items.map((item) => item.migration))]
+    .sort()
+    .map((file) => `supabase/migrations/${file}`)
+    .join(", ");
 
 async function checkSupabase() {
   if (!supabaseUrl || !serviceKey) {
@@ -127,18 +178,19 @@ async function checkSupabase() {
   // Ojo: con `head: true` PostgREST responde 204 sin error aunque la tabla no
   // exista, así que ese atajo daría un falso "todo bien". Con `limit(0)` sí
   // devuelve el error PGRST205.
+  const tableNames = Object.keys(TABLES);
   const missing = [];
-  for (const table of TABLES) {
+  for (const table of tableNames) {
     const { error } = await db.from(table).select("*", { count: "exact" }).limit(0);
-    if (error) missing.push(`${table}: ${error.message}`);
+    if (error) missing.push({ what: table, migration: TABLES[table], message: error.message });
   }
 
-  if (missing.length === TABLES.length) {
+  if (missing.length === tableNames.length) {
     report(
       "Supabase",
       "fail",
       "no se pudo leer ninguna tabla",
-      `Primer error: ${missing[0]}. Si dice "does not exist", aplica supabase/migrations/. Si dice "Invalid API key", revisa la llave.`,
+      `Primer error: ${missing[0].message}. Si dice "does not exist", aplica supabase/migrations/. Si dice "Invalid API key", revisa la llave.`,
     );
     return;
   }
@@ -146,8 +198,25 @@ async function checkSupabase() {
     report(
       "Supabase",
       "fail",
-      `faltan ${missing.length} tablas`,
-      `Aplica las migraciones de supabase/migrations/. Detalle: ${missing.join(", ")}`,
+      `faltan ${missing.length} tablas: ${missing.map((item) => item.what).join(", ")}`,
+      `Aplica ${pending(missing)}.`,
+    );
+    return;
+  }
+
+  // La tabla puede existir y estar atrasada: una migración a medio aplicar deja
+  // la carta en pie y tira el cobro al llegar a la columna que no está.
+  const stale = [];
+  for (const item of COLUMNS) {
+    const { error } = await db.from(item.table).select(item.column).limit(0);
+    if (error) stale.push(item);
+  }
+  if (stale.length) {
+    report(
+      "Supabase",
+      "fail",
+      `el esquema está atrasado: faltan ${stale.map((item) => `${item.table}.${item.column}`).join(", ")}`,
+      `Aplica ${pending(stale)}.`,
     );
     return;
   }
@@ -161,7 +230,7 @@ async function checkSupabase() {
   report(
     "Supabase",
     "ok",
-    `conectado · ${TABLES.length} tablas · ${products ?? 0} productos · ${staff ?? 0} usuarios · zona ${settings?.timezone ?? "?"}`,
+    `conectado · ${tableNames.length} tablas · ${products ?? 0} productos · ${staff ?? 0} usuarios · zona ${settings?.timezone ?? "?"}`,
   );
 
   // Las funciones transaccionales tienen que existir y ser invocables.
@@ -175,10 +244,43 @@ async function checkSupabase() {
       "Supabase · funciones",
       "fail",
       `business_day() no responde: ${rpcError.message}`,
-      "Aplica supabase/migrations/20260824000002_rpc.sql y las posteriores.",
+      `Aplica supabase/migrations/${MIGRATIONS.rpc} y las posteriores.`,
     );
   } else {
-    report("Supabase · funciones", "ok", "create_order, close_cash y compañía disponibles");
+    // Las demás no se pueden invocar de prueba — cobran, cancelan y borran —, así
+    // que se comprueban por presencia: la especificación OpenAPI de PostgREST
+    // lista una ruta /rpc/<nombre> por cada función expuesta.
+    const missingFunctions = await (async () => {
+      const response = await fetch(`${supabaseUrl}/rest/v1/`, {
+        headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
+      });
+      if (!response.ok) return null;
+      const paths = Object.keys((await response.json())?.paths ?? {});
+      return Object.entries(FUNCTIONS)
+        .filter(([name]) => !paths.includes(`/rpc/${name}`))
+        .map(([name, migration]) => ({ what: name, migration }));
+    })().catch(() => null);
+
+    if (missingFunctions === null) {
+      report(
+        "Supabase · funciones",
+        "warn",
+        "business_day() responde, pero no se pudo listar el resto de funciones",
+      );
+    } else if (missingFunctions.length) {
+      report(
+        "Supabase · funciones",
+        "fail",
+        `faltan ${missingFunctions.map((item) => item.what).join(", ")}`,
+        `Aplica ${pending(missingFunctions)}.`,
+      );
+    } else {
+      report(
+        "Supabase · funciones",
+        "ok",
+        `${Object.keys(FUNCTIONS).length} funciones disponibles`,
+      );
+    }
   }
 
   if (staff === 0) {
