@@ -193,10 +193,12 @@ scripts/doctor.mjs  Revisión de conexiones
 - **Auditoría.** Cada movimiento de inventario y cada movimiento de puntos queda
   registrado en `inventory_movements` y `loyalty_transactions`, con quién y por
   qué.
-- **Propina.** Se elige al cobrar, con porcentajes sugeridos (10, 15, 20 %) o
-  escribiendo el monto. Se calcula sobre el consumo ya con descuento, para que
+- **Propina.** Se elige al cobrar y siempre es un porcentaje: tres sugeridos
+  (10, 15, 20 %) o el que se escriba a mano. Por omisión no hay propina («Sin
+  propina», 0 %), porque dejarla tiene que ser una elección y no algo que se
+  cuela por descuido. Se calcula sobre el consumo ya con descuento, para que
   una promoción no le recorte al equipo lo que el cliente quiso dejarle, y nunca
-  puede pasar del monto de la cuenta: una propina mayor que el consumo es
+  puede pasar del 100 % de la cuenta: una propina mayor que el consumo es
   siempre un dedazo en la caja. Se guarda en su propia columna, así que el corte
   puede decir qué parte del efectivo del cajón es venta y qué parte se reparte.
 - **Eliminar un producto** se puede siempre, tenga ventas o no. El histórico no

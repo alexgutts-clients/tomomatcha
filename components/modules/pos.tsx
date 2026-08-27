@@ -38,9 +38,11 @@ const PROMOS: { pct: number; label: string }[] = [
   { pct: 15, label: "Cliente frecuente 15%" },
 ];
 
-// Porcentajes sugeridos de propina. El 0 es explícito y va primero: dejar
-// propina tiene que ser una elección, no algo que se cuela por omisión.
-const TIP_PCTS = [0, 10, 15, 20];
+// Tres porcentajes sugeridos de propina, los que cubren casi todos los casos
+// en barra: teclear con gente esperando es lo que hay que evitar. El «Sin
+// propina» que los precede es el estado por omisión, y es explícito a
+// propósito: dejar propina tiene que ser una elección, no algo que se cuela.
+const TIP_PCTS = [10, 15, 20];
 
 const TEMP_LABEL: Record<Temperature, string> = {
   caliente: "Caliente",
@@ -51,6 +53,14 @@ const TEMP_EMOJI: Record<Temperature, string> = {
   caliente: "🔥",
   frio: "🧊",
 };
+
+/**
+ * Porcentaje de propina tal como se enseña en el ticket: sin decimales cuando
+ * es redondo (el caso normal) y con ellos sólo si el cajero los tecleó.
+ */
+function pctLabel(pct: number): string {
+  return String(Math.round(pct * 100) / 100);
+}
 
 function sweetnessLabel(s: Sweetness): string {
   return s === 0 ? "Sin azúcar" : `${s}%`;
@@ -111,10 +121,11 @@ export function PosModule() {
   // descuenta empaque de más y no de menos, que es el error menos costoso.
   const [serviceMode, setServiceMode] = useState<ServiceMode>("llevar");
   const [cashReceived, setCashReceived] = useState("");
-  // Propina: o un porcentaje sugerido, o un importe escrito a mano. Nunca las
-  // dos cosas, para que la caja no tenga que adivinar cuál gana.
+  // Propina: siempre un porcentaje sobre el consumo, sea uno de los sugeridos
+  // o uno escrito a mano. Nunca las dos cosas a la vez, para que la caja no
+  // tenga que adivinar cuál gana. Arranca en 0 en cada venta.
   const [tipPct, setTipPct] = useState(0);
-  const [tipCustom, setTipCustom] = useState("");
+  const [tipCustomPct, setTipCustomPct] = useState("");
   const [mobileTicketOpen, setMobileTicketOpen] = useState(false);
   const [success, setSuccess] = useState<{ folio: number; total: number } | null>(
     null,
@@ -199,13 +210,16 @@ export function PosModule() {
   const consumo = Math.round(subtotal * (1 - discountPct / 100) * 100) / 100;
   const discountAmount = Math.round((subtotal - consumo) * 100) / 100;
 
-  const tipTyped = tipCustom.trim() !== "";
-  const rawTip = tipTyped
-    ? Number(tipCustom) || 0
-    : (consumo * tipPct) / 100;
-  // Tope en el consumo: una propina mayor que la cuenta es siempre un dedazo.
-  const tip = Math.round(Math.max(0, Math.min(rawTip, consumo)) * 100) / 100;
-  const tipOverflow = tipTyped && Number(tipCustom) > consumo;
+  const tipTyped = tipCustomPct.trim() !== "";
+  const typedPct = Number(tipCustomPct);
+  const rawTipPct = tipTyped
+    ? (Number.isFinite(typedPct) ? typedPct : 0)
+    : tipPct;
+  // Tope en el 100%: una propina mayor que la cuenta es siempre un dedazo, y
+  // el mismo tope lo vuelve a aplicar create_order sobre el consumo.
+  const tipPctApplied = Math.max(0, Math.min(rawTipPct, 100));
+  const tip = Math.round(consumo * tipPctApplied) / 100;
+  const tipOverflow = tipTyped && typedPct > 100;
 
   const total = Math.round((consumo + tip) * 100) / 100;
   const itemCount = cart.reduce((n, l) => n + l.qty, 0);
@@ -340,7 +354,7 @@ export function PosModule() {
     setServiceMode("llevar");
     setCashReceived("");
     setTipPct(0);
-    setTipCustom("");
+    setTipCustomPct("");
     setMobileTicketOpen(false);
     setSuccess({ folio: result.folio, total: chargedTotal });
   };
@@ -517,7 +531,7 @@ export function PosModule() {
         {tip > 0 ? (
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted">
-              Propina{!tipTyped && tipPct > 0 ? ` · ${tipPct}%` : ""}
+              Propina · {pctLabel(tipPctApplied)}%
             </span>
             <span className="font-bold text-ink">+{money(tip, currency)}</span>
           </div>
@@ -534,37 +548,47 @@ export function PosModule() {
       <div className="border-t border-line pt-4">
         <p className="eyebrow">Propina</p>
         <div className="mt-2 flex flex-wrap gap-2">
+          <Chip
+            active={!tipTyped && tipPct === 0}
+            onClick={() => {
+              setTipPct(0);
+              setTipCustomPct("");
+            }}
+          >
+            Sin propina
+          </Chip>
           {TIP_PCTS.map((pct) => (
             <Chip
               key={pct}
               active={!tipTyped && tipPct === pct}
               onClick={() => {
                 setTipPct(pct);
-                setTipCustom("");
+                setTipCustomPct("");
               }}
             >
-              {pct === 0 ? "Sin propina" : `${pct}%`}
+              {pct}%
             </Chip>
           ))}
         </div>
         <Input
           type="number"
           min={0}
-          step="0.01"
+          max={100}
+          step="1"
           inputMode="decimal"
-          aria-label="Otro monto de propina"
-          placeholder="Otro monto"
-          value={tipCustom}
-          onChange={(e) => setTipCustom(e.target.value)}
+          aria-label="Otro porcentaje de propina"
+          placeholder="Otro porcentaje (%)"
+          value={tipCustomPct}
+          onChange={(e) => setTipCustomPct(e.target.value)}
           className="mt-2 rounded-full"
         />
         {tipOverflow ? (
           <p className="mt-1.5 text-xs font-extrabold text-danger">
-            La propina no puede pasar del consumo ({money(consumo, currency)}).
+            La propina no puede pasar del 100% del consumo.
           </p>
         ) : tip > 0 ? (
           <p className="mt-1.5 text-xs font-extrabold text-matcha-deep">
-            Propina: {money(tip, currency)}
+            Propina {pctLabel(tipPctApplied)}%: {money(tip, currency)}
           </p>
         ) : null}
       </div>
