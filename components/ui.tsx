@@ -230,6 +230,110 @@ export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return <select {...props} className={cx(inputBase, "pr-9", props.className)} />;
 }
 
+/* ------------------------------ Campos numéricos ------------------------------ */
+
+/* ============================================================================
+ * Captura de números.
+ * ----------------------------------------------------------------------------
+ * Aquí no hay `type="number"` a propósito. El stepper del navegador cobra dos
+ * peajes que en una barra se pagan todos los días: las flechitas ocupan la
+ * esquina donde cae el pulgar, y el campo se niega a quedarse vacío, así que
+ * para escribir «120» hay que borrar antes el cero que ya estaba. La rueda del
+ * ratón encima del campo también cambia la cifra sin que nadie se lo pida.
+ *
+ * La alternativa es un campo de texto que sólo deja entrar lo que puede llegar
+ * a ser un número, con el teclado numérico del teléfono (`inputMode`). Escribir
+ * es directo, borrar deja el campo en blanco, y el marcador de posición dice
+ * qué valor se asume si se deja así.
+ *
+ * `numericText` es el filtro: devuelve el texto ya limpio, o `null` cuando la
+ * tecla no pinta nada aquí — y entonces la pulsación simplemente se ignora, en
+ * vez de dejar entrar basura que después hay que validar.
+ * ========================================================================== */
+
+/** Texto que todavía puede convertirse en número, o `null` si la tecla sobra. */
+export function numericText(raw: string, integer = false): string | null {
+  const value = raw.replace(",", ".");
+  if (value === "") return "";
+  const shape = integer ? /^\d+$/ : /^\d*\.?\d*$/;
+  if (!shape.test(value)) return null;
+  return value;
+}
+
+/** El número que representa ese texto, o `null` si aún no representa ninguno. */
+export function numericValue(text: string): number | null {
+  if (text.trim() === "") return null;
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/*
+ * Campo numérico con estado propio.
+ *
+ * Guarda el texto tal como se está escribiendo y avisa hacia arriba el número
+ * (o `null` si el campo quedó vacío). Esa separación es la que permite teclear
+ * «12.» sin que el valor a medio escribir rebote a «12»: el padre recibe 12, y
+ * el punto sigue en pantalla esperando los decimales.
+ *
+ * Vuelve a sincronizarse con el padre sólo cuando lo que muestra ya no
+ * corresponde a lo que el padre tiene — al abrir otro formulario, por ejemplo.
+ * Un cero y un campo vacío se consideran lo mismo para ese efecto: si el padre
+ * traduce el vacío a 0, el campo no debe rellenarse solo con el cero que
+ * acabamos de borrar.
+ */
+export function NumberInput({
+  value,
+  onValueChange,
+  integer = false,
+  className,
+  placeholder = "0",
+  ...rest
+}: Omit<
+  React.InputHTMLAttributes<HTMLInputElement>,
+  "value" | "onChange" | "type" | "step"
+> & {
+  value: number | null | undefined;
+  onValueChange: (value: number | null) => void;
+  /** `true` para cantidades sin decimales (puntos, número de reseñas). */
+  integer?: boolean;
+}) {
+  // El cero arranca en blanco: el marcador de posición ya dice que vale 0, y
+  // así se escribe encima en vez de tener que borrarlo primero.
+  const [text, setText] = useState(() =>
+    value === null || value === undefined || value === 0 ? "" : String(value),
+  );
+
+  const matches =
+    text.trim() === ""
+      ? value === null || value === undefined || value === 0
+      : numericValue(text) === value;
+
+  useEffect(() => {
+    if (matches) return;
+    setText(value === null || value === undefined ? "" : String(value));
+    // Sólo reacciona al valor del padre; `text` es estado local en curso.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
+  return (
+    <input
+      {...rest}
+      type="text"
+      inputMode={integer ? "numeric" : "decimal"}
+      autoComplete="off"
+      placeholder={placeholder}
+      value={text}
+      onChange={(e) => {
+        const clean = numericText(e.target.value, integer);
+        if (clean === null) return;
+        setText(clean);
+        onValueChange(numericValue(clean));
+      }}
+      className={cx(inputBase, className)}
+    />
+  );
+}
+
 /* ------------------------------ Estados vacíos -------------------------------- */
 
 export function EmptyState({
@@ -271,8 +375,8 @@ export function AccessGate({ module }: { module: string }) {
       </h1>
       <p className="mx-auto mt-4 max-w-md text-sm leading-6 text-muted">
         Tu cuenta tiene perfil de <strong>empleado</strong>, con acceso a Punto
-        de venta y Comandas. Si necesitas entrar aquí, pídele a un administrador
-        que te cambie el rol en Ajustes.
+        de venta, Comandas, Inventario y Productos. Si necesitas entrar aquí,
+        pídele a un administrador que te cambie el rol en Ajustes.
       </p>
       <Link
         href="/pos"

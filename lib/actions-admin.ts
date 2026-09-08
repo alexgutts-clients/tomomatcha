@@ -13,7 +13,7 @@ import {
   run,
   type ActionResult,
 } from "./action-utils";
-import { requireAdmin } from "./auth";
+import { requireAdmin, requireStaff } from "./auth";
 import {
   CATALOG_CATEGORIES,
   CATALOG_EXTRAS,
@@ -172,10 +172,17 @@ function translateNameConflict(message: string, what: string): string {
     : message;
 }
 
+/*
+ * Quitar o devolver un producto al menú es operación de barra, no diseño de la
+ * carta: cuando se acaba el matcha hay que sacarlo del punto de venta en ese
+ * momento, y esperar a que llegue un administrador significa venderlo sin
+ * tenerlo. Por eso es la única acción del menú que un empleado puede ejecutar
+ * — el precio, la receta y el borrado siguen siendo de administración.
+ */
 export async function toggleProduct(
   productId: string,
 ): Promise<ActionResult<boolean>> {
-  return run(requireAdmin, async () => {
+  return run(requireStaff, async () => {
     const id = reqId(productId, "El producto");
     const supabase = db();
     const current = await supabase

@@ -24,9 +24,9 @@ const NAV: NavItem[] = [
   { href: "/inicio", label: "Inicio", short: "Inicio", icon: "inicio", employee: false },
   { href: "/pos", label: "Punto de venta", short: "Venta", icon: "pos", employee: true },
   { href: "/comandas", label: "Comandas", short: "Comandas", icon: "comandas", employee: true },
-  { href: "/inventario", label: "Inventario", short: "Insumos", icon: "inventario", employee: false },
+  { href: "/inventario", label: "Inventario", short: "Insumos", icon: "inventario", employee: true },
   { href: "/preparados", label: "Productos preparados", short: "Preparados", icon: "preparados", employee: false },
-  { href: "/productos", label: "Productos", short: "Productos", icon: "productos", employee: false },
+  { href: "/productos", label: "Productos", short: "Productos", icon: "productos", employee: true },
   { href: "/reportes", label: "Reportes", short: "Reportes", icon: "reportes", employee: false },
   // Clientes y lealtad está oculto temporalmente (ver SHOW_LEALTAD_UI).
   ...(SHOW_LEALTAD_UI

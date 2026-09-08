@@ -91,7 +91,12 @@ que un administrador las active** en Ajustes → Equipo. Esto es a propósito:
 registrarse no debe alcanzar para entrar a la caja.
 
 - **Administrador**: acceso a todos los módulos y a la configuración.
-- **Empleado**: sólo Punto de venta y Comandas.
+- **Empleado**: Punto de venta, Comandas, Inventario y Productos. En Inventario
+  cuenta, recibe y ajusta existencias, pero no da de alta, no borra insumos ni
+  edita recetas. En Productos consulta la carta y puede quitar o devolver un
+  producto al menú; precios, recetas, categorías, leches, extras, fotos y
+  borrado siguen siendo de administración. No ve corte de caja, reportes ni
+  ajustes.
 
 El primer usuario que inicia sesión queda como administrador activo. También
 puedes fijar administradores por correo con `BOOTSTRAP_ADMIN_EMAILS`.

@@ -160,7 +160,7 @@ function buildSections(ctx: ManualContext): Section[] {
           items: [
             {
               term: "Empleado",
-              desc: "Punto de venta y Comandas. Es todo lo que se necesita para atender la barra: cobrar y sacar los pedidos.",
+              desc: "Punto de venta, Comandas, Inventario y Productos. Cobra, saca pedidos, cuenta insumos y quita del menú lo que se acabó. No ve corte de caja, reportes ni ajustes.",
             },
             {
               term: "Administrador",
@@ -809,7 +809,7 @@ function buildSections(ctx: ManualContext): Section[] {
             },
             {
               term: "«Me aparece un candado»",
-              desc: "Ese módulo es sólo para administración. Tu perfil de empleado trabaja en Punto de venta y Comandas.",
+              desc: "Ese módulo es sólo para administración. Tu perfil de empleado trabaja en Punto de venta, Comandas, Inventario y Productos.",
             },
             {
               term: "«El inventario no cuadra»",

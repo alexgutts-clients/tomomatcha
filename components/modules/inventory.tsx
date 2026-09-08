@@ -21,7 +21,6 @@ import {
   type Unit,
 } from "@/lib/types";
 import {
-  AccessGate,
   Badge,
   Button,
   Card,
@@ -31,11 +30,13 @@ import {
   FlagGate,
   Input,
   Modal,
+  NumberInput,
   PageHeader,
   Select,
   Stat,
   Toggle,
   cx,
+  numericText,
 } from "@/components/ui";
 
 /* ------------------------------- Utilidades ---------------------------------- */
@@ -128,8 +129,14 @@ export function InventoryModule() {
     return map;
   }, [state.products, state.milks]);
 
-  if (state.role === "empleado") return <AccessGate module="Inventario" />;
   if (!state.flags.inventario) return <FlagGate module="Inventario" />;
+
+  /*
+   * El empleado cuenta y recibe insumos — es quien está frente al estante —,
+   * pero no da de alta, no borra y no toca recetas: eso es catálogo, y un
+   * insumo mal borrado se lleva por delante el descuento de varios productos.
+   */
+  const isAdmin = state.role === "admin";
 
   const packagingCount = state.ingredients.filter((i) => i.isPackaging).length;
   const nextOut = [...state.ingredients]
@@ -199,9 +206,11 @@ export function InventoryModule() {
         title="Inventario"
         desc="Cada venta descuenta insumos según la receta del producto, incluida la leche que elige el cliente. El empaque solo se descuenta en pedidos para llevar."
         actions={
-          <Button variant="matcha" onClick={() => setForm({ ...EMPTY_FORM })}>
-            + Nuevo insumo
-          </Button>
+          isAdmin ? (
+            <Button variant="matcha" onClick={() => setForm({ ...EMPTY_FORM })}>
+              + Nuevo insumo
+            </Button>
+          ) : null
         }
       />
 
@@ -211,9 +220,11 @@ export function InventoryModule() {
           title="Todavía no hay insumos"
           desc="Registra matcha, leches, vasos y bakery para que cada venta descuente sola. Si prefieres empezar rápido, carga el catálogo sugerido desde Ajustes."
           action={
-            <Button variant="matcha" onClick={() => setForm({ ...EMPTY_FORM })}>
-              Registrar el primero
-            </Button>
+            isAdmin ? (
+              <Button variant="matcha" onClick={() => setForm({ ...EMPTY_FORM })}>
+                Registrar el primero
+              </Button>
+            ) : null
           }
         />
       ) : (
@@ -304,7 +315,13 @@ export function InventoryModule() {
                           {pct !== null ? ` (${pct}% del objetivo)` : ""} · Uso
                           semanal: {unitLabel(ing.weeklyUse, ing.unit)}
                         </p>
-                        {uses.length ? (
+                        {!isAdmin ? (
+                          <p className="mt-1 text-xs text-muted">
+                            {uses.length
+                              ? `Lo usan ${uses.length} producto${uses.length === 1 ? "" : "s"}`
+                              : "Ningún producto lo consume todavía"}
+                          </p>
+                        ) : uses.length ? (
                           <button
                             type="button"
                             onClick={() => setRecipeFor(ing)}
@@ -391,35 +408,39 @@ export function InventoryModule() {
                         >
                           Contar
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={busy}
-                          onClick={() =>
-                            setForm({
-                              id: ing.id,
-                              name: ing.name,
-                              unit: ing.unit,
-                              min: ing.min,
-                              weeklyUse: ing.weeklyUse,
-                              isPackaging: ing.isPackaging,
-                              parLevel: ing.parLevel,
-                            })
-                          }
-                        >
-                          Editar
-                        </Button>
-                        <ConfirmButton
-                          label="Eliminar"
-                          confirmLabel="Sí, eliminar"
-                          disabled={busy}
-                          onConfirm={() =>
-                            void submit(() => deleteIngredient(ing.id), {
-                              title: "Insumo eliminado",
-                              detail: ing.name,
-                            })
-                          }
-                        />
+                        {isAdmin ? (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={busy}
+                              onClick={() =>
+                                setForm({
+                                  id: ing.id,
+                                  name: ing.name,
+                                  unit: ing.unit,
+                                  min: ing.min,
+                                  weeklyUse: ing.weeklyUse,
+                                  isPackaging: ing.isPackaging,
+                                  parLevel: ing.parLevel,
+                                })
+                              }
+                            >
+                              Editar
+                            </Button>
+                            <ConfirmButton
+                              label="Eliminar"
+                              confirmLabel="Sí, eliminar"
+                              disabled={busy}
+                              onConfirm={() =>
+                                void submit(() => deleteIngredient(ing.id), {
+                                  title: "Insumo eliminado",
+                                  detail: ing.name,
+                                })
+                              }
+                            />
+                          </>
+                        ) : null}
                       </div>
                     </div>
                   </Card>
@@ -485,19 +506,9 @@ export function InventoryModule() {
                 label="Nivel objetivo"
                 hint="Cuánto tienes cuando está bien surtido (opcional)"
               >
-                <Input
-                  type="number"
-                  min={0}
-                  step="any"
-                  inputMode="decimal"
-                  value={form.parLevel ?? ""}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      parLevel:
-                        e.target.value === "" ? null : Number(e.target.value),
-                    })
-                  }
+                <NumberInput
+                  value={form.parLevel}
+                  onValueChange={(v) => setForm({ ...form, parLevel: v })}
                 />
               </Field>
             </div>
@@ -506,13 +517,9 @@ export function InventoryModule() {
               label="Umbral de alerta"
               hint="Debajo de esta cantidad el insumo se marca por resurtir"
             >
-              <Input
-                type="number"
-                min={0}
-                step="any"
-                inputMode="decimal"
+              <NumberInput
                 value={form.min}
-                onChange={(e) => setForm({ ...form, min: Number(e.target.value) })}
+                onValueChange={(v) => setForm({ ...form, min: v ?? 0 })}
               />
             </Field>
 
@@ -550,15 +557,9 @@ export function InventoryModule() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Uso semanal" hint="Referencia para resurtir (opcional)">
-                <Input
-                  type="number"
-                  min={0}
-                  step="any"
-                  inputMode="decimal"
+                <NumberInput
                   value={form.weeklyUse}
-                  onChange={(e) =>
-                    setForm({ ...form, weeklyUse: Number(e.target.value) })
-                  }
+                  onValueChange={(v) => setForm({ ...form, weeklyUse: v ?? 0 })}
                 />
               </Field>
 
@@ -567,15 +568,9 @@ export function InventoryModule() {
                   label="Existencia inicial"
                   hint="Lo que hay ahora en la barra"
                 >
-                  <Input
-                    type="number"
-                    min={0}
-                    step="any"
-                    inputMode="decimal"
-                    value={form.stock ?? 0}
-                    onChange={(e) =>
-                      setForm({ ...form, stock: Number(e.target.value) })
-                    }
+                  <NumberInput
+                    value={form.stock}
+                    onValueChange={(v) => setForm({ ...form, stock: v ?? 0 })}
                   />
                 </Field>
               ) : null}
@@ -648,13 +643,15 @@ export function InventoryModule() {
             >
               <Input
                 autoFocus
-                type="number"
-                min={0}
-                step="any"
+                type="text"
                 inputMode="decimal"
+                autoComplete="off"
                 value={entryValue}
                 placeholder={entry.mode === "recibir" ? "Ej. 200" : "0"}
-                onChange={(e) => setEntryValue(e.target.value)}
+                onChange={(e) => {
+                  const text = numericText(e.target.value);
+                  if (text !== null) setEntryValue(text);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") void submitEntry();
                 }}
@@ -814,15 +811,15 @@ function IngredientUsagePanel({
         </span>
         <span className="inline-flex items-center gap-1.5">
           <Input
-            type="number"
-            min={0}
-            step="any"
+            type="text"
             inputMode="decimal"
+            autoComplete="off"
             aria-label={`Cantidad de ${ingredient.name} en ${product.name}`}
             value={value}
-            onChange={(e) =>
-              setDrafts((d) => ({ ...d, [draftKey]: e.target.value }))
-            }
+            onChange={(e) => {
+              const text = numericText(e.target.value);
+              if (text !== null) setDrafts((d) => ({ ...d, [draftKey]: text }));
+            }}
             className="w-24 text-center"
           />
           <span className="w-8 text-xs font-bold text-muted">{unit}</span>
@@ -899,14 +896,16 @@ function IngredientUsagePanel({
             </span>
             <span className="inline-flex items-center gap-1.5">
               <Input
-                type="number"
-                min={0}
-                step="any"
+                type="text"
                 inputMode="decimal"
+                autoComplete="off"
                 aria-label="Cantidad"
                 placeholder="Cantidad"
                 value={addQty}
-                onChange={(e) => setAddQty(e.target.value)}
+                onChange={(e) => {
+                  const text = numericText(e.target.value);
+                  if (text !== null) setAddQty(text);
+                }}
                 className="w-28"
               />
               <span className="w-8 text-xs font-bold text-muted">

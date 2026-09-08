@@ -28,6 +28,7 @@ import {
   Field,
   Input,
   Modal,
+  NumberInput,
   PageHeader,
   Select,
   Stat,
@@ -295,13 +296,9 @@ export function PreparedModule() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Cantidad">
-                <Input
-                  type="number"
-                  min={0}
-                  step="any"
-                  inputMode="decimal"
+                <NumberInput
                   value={form.qty}
-                  onChange={(e) => setForm({ ...form, qty: Number(e.target.value) })}
+                  onValueChange={(v) => setForm({ ...form, qty: v ?? 0 })}
                 />
               </Field>
               <Field label="Unidad">

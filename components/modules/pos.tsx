@@ -30,6 +30,7 @@ import {
   Modal,
   PageHeader,
   cx,
+  numericText,
 } from "@/components/ui";
 
 const PROMOS: { pct: number; label: string }[] = [
@@ -94,7 +95,7 @@ function Chip({
       onClick={onClick}
       aria-pressed={active}
       className={cx(
-        "focus-ring rounded-full border px-3.5 py-1.5 text-xs font-bold transition",
+        "focus-ring max-w-full break-words rounded-full border px-3.5 py-1.5 text-xs font-bold transition",
         active
           ? "border-matcha bg-matcha-mist text-matcha-deep"
           : "border-line bg-white text-ink hover:border-matcha",
@@ -422,16 +423,16 @@ export function PosModule() {
                   aria-label={`Editar ${product.name}`}
                   className="focus-ring min-w-0 flex-1 rounded-lg text-left"
                 >
-                  <span className="block text-sm font-extrabold text-ink">
+                  <span className="block break-words text-sm font-extrabold text-ink">
                     {line.qty}× {product.name}
                   </span>
                   {summary ? (
-                    <span className="mt-0.5 block text-xs text-muted">
+                    <span className="mt-0.5 block break-words text-xs text-muted">
                       {summary}
                     </span>
                   ) : null}
                   {line.modifiers.notes ? (
-                    <span className="mt-0.5 block text-xs italic text-muted">
+                    <span className="mt-0.5 block break-words text-xs italic text-muted">
                       {line.modifiers.notes}
                     </span>
                   ) : null}
@@ -571,15 +572,16 @@ export function PosModule() {
           ))}
         </div>
         <Input
-          type="number"
-          min={0}
-          max={100}
-          step="1"
+          type="text"
           inputMode="decimal"
+          autoComplete="off"
           aria-label="Otro porcentaje de propina"
           placeholder="Otro porcentaje (%)"
           value={tipCustomPct}
-          onChange={(e) => setTipCustomPct(e.target.value)}
+          onChange={(e) => {
+            const text = numericText(e.target.value);
+            if (text !== null) setTipCustomPct(text);
+          }}
           className="mt-2 rounded-full"
         />
         {tipOverflow ? (
@@ -649,13 +651,16 @@ export function PosModule() {
               </Chip>
             </div>
             <Input
-              type="number"
-              min={0}
+              type="text"
               inputMode="decimal"
+              autoComplete="off"
               aria-label="Efectivo recibido"
               placeholder="Efectivo recibido"
               value={cashReceived}
-              onChange={(e) => setCashReceived(e.target.value)}
+              onChange={(e) => {
+                const text = numericText(e.target.value);
+                if (text !== null) setCashReceived(text);
+              }}
               className="rounded-full"
             />
             {cart.length ? (
@@ -997,7 +1002,7 @@ export function PosModule() {
                             : "border-line bg-white hover:border-matcha",
                         )}
                       >
-                        <span className="flex items-center gap-2.5">
+                        <span className="flex min-w-0 items-center gap-2.5">
                           <input
                             type="checkbox"
                             checked={on}
@@ -1009,11 +1014,11 @@ export function PosModule() {
                                   : [...draft.extraIds, e.id],
                               })
                             }
-                            className="h-4 w-4 accent-matcha-deep"
+                            className="h-4 w-4 shrink-0 accent-matcha-deep"
                           />
-                          {e.name}
+                          <span className="min-w-0 break-words">{e.name}</span>
                         </span>
-                        <span className="text-xs font-extrabold text-muted">
+                        <span className="shrink-0 text-xs font-extrabold text-muted">
                           +{money(e.price, currency)}
                         </span>
                       </label>

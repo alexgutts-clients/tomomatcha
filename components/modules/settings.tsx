@@ -26,6 +26,7 @@ import {
   ImageUpload,
   Input,
   MediaImage,
+  NumberInput,
   PageHeader,
   Select,
   Toggle,
@@ -158,15 +159,9 @@ export function SettingsModule() {
             </Select>
           </Field>
           <Field label={`Fondo de caja (${currency})`} hint="Informativo en el corte">
-            <Input
-              type="number"
-              min={0}
-              step="any"
-              inputMode="decimal"
+            <NumberInput
               value={form.cashFloat}
-              onChange={(e) =>
-                setForm({ ...form, cashFloat: Number(e.target.value) })
-              }
+              onValueChange={(v) => setForm({ ...form, cashFloat: v ?? 0 })}
             />
           </Field>
         </div>
@@ -178,27 +173,18 @@ export function SettingsModule() {
               label="Puntos por peso"
               hint="1 = un punto por cada peso de compra"
             >
-              <Input
-                type="number"
-                min={0}
-                step="any"
-                inputMode="decimal"
+              <NumberInput
                 value={form.pointsPerCurrency}
-                onChange={(e) =>
-                  setForm({ ...form, pointsPerCurrency: Number(e.target.value) })
+                onValueChange={(v) =>
+                  setForm({ ...form, pointsPerCurrency: v ?? 0 })
                 }
               />
             </Field>
             <Field label="Puntos para canjear una bebida">
-              <Input
-                type="number"
-                min={1}
-                step="1"
-                inputMode="numeric"
+              <NumberInput
+                integer
                 value={form.rewardCost}
-                onChange={(e) =>
-                  setForm({ ...form, rewardCost: Number(e.target.value) })
-                }
+                onValueChange={(v) => setForm({ ...form, rewardCost: v ?? 0 })}
               />
             </Field>
           </div>
@@ -225,35 +211,17 @@ export function SettingsModule() {
             </Field>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Calificación actual" hint="De 0 a 5 (opcional)">
-                <Input
-                  type="number"
-                  min={0}
-                  max={5}
-                  step="0.1"
-                  inputMode="decimal"
-                  value={form.googleRating ?? ""}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      googleRating:
-                        e.target.value === "" ? null : Number(e.target.value),
-                    })
-                  }
+                <NumberInput
+                  value={form.googleRating}
+                  onValueChange={(v) => setForm({ ...form, googleRating: v })}
                 />
               </Field>
               <Field label="Número de reseñas" hint="Opcional">
-                <Input
-                  type="number"
-                  min={0}
-                  step="1"
-                  inputMode="numeric"
-                  value={form.googleReviewsCount ?? ""}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      googleReviewsCount:
-                        e.target.value === "" ? null : Number(e.target.value),
-                    })
+                <NumberInput
+                  integer
+                  value={form.googleReviewsCount}
+                  onValueChange={(v) =>
+                    setForm({ ...form, googleReviewsCount: v })
                   }
                 />
               </Field>
@@ -415,7 +383,8 @@ export function SettingsModule() {
         <p className="mt-1 max-w-2xl text-xs leading-5 text-muted">
           Las cuentas se crean iniciando sesión con Clerk, pero no tienen acceso
           hasta que las actives aquí. Los administradores ven todo; los empleados
-          sólo Punto de venta y Comandas.
+          entran a Punto de venta, Comandas, Inventario y Productos, sin corte de
+          caja, reportes ni ajustes.
         </p>
 
         <div className="mt-4 space-y-2.5">

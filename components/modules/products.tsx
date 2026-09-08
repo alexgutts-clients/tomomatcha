@@ -35,7 +35,6 @@ import {
   type Product,
 } from "@/lib/types";
 import {
-  AccessGate,
   Badge,
   Button,
   Card,
@@ -46,12 +45,14 @@ import {
   Input,
   MediaImage,
   Modal,
+  NumberInput,
   PageHeader,
   Select,
   Stat,
   Textarea,
   Toggle,
   cx,
+  numericText,
 } from "@/components/ui";
 
 const MOD_KEYS: (keyof ModifierSupport)[] = [
@@ -100,7 +101,13 @@ export function ProductsModule() {
   const [categoryToEmpty, setCategoryToEmpty] = useState<Category | null>(null);
   const [moveTarget, setMoveTarget] = useState("");
 
-  if (state.role === "empleado") return <AccessGate module="Productos" />;
+  /*
+   * El empleado ve la carta y puede quitar o devolver un producto al menú
+   * cuando se acaba; todo lo demás — precio, receta, categorías, leches,
+   * extras, fotos y borrado — sigue siendo de administración, porque cambia
+   * lo que se cobra o lo que se descuenta.
+   */
+  const isAdmin = state.role === "admin";
 
   const activeProducts = state.products.filter((p) => p.active);
   const pausedCount = state.products.length - activeProducts.length;
@@ -284,11 +291,17 @@ export function ProductsModule() {
       <PageHeader
         eyebrow="Menú · sin tocar código"
         title="Productos"
-        desc="El menú vive aquí: crea productos, cambia precios, define recetas y decide qué se puede personalizar. Sin depender de un desarrollador."
+        desc={
+          isAdmin
+            ? "El menú vive aquí: crea productos, cambia precios, define recetas y decide qué se puede personalizar. Sin depender de un desarrollador."
+            : "Consulta la carta y quita del menú lo que se haya acabado. Precios, recetas y altas las lleva administración."
+        }
         actions={
-          <Button variant="matcha" onClick={newProduct}>
-            + Nuevo producto
-          </Button>
+          isAdmin ? (
+            <Button variant="matcha" onClick={newProduct}>
+              + Nuevo producto
+            </Button>
+          ) : null
         }
       />
 
@@ -298,9 +311,11 @@ export function ProductsModule() {
           title="La carta está vacía"
           desc="Crea tu primer producto, o carga el catálogo sugerido de TomoMatcha desde Ajustes y ajústalo a tu gusto."
           action={
-            <Button variant="matcha" onClick={newProduct}>
-              Crear el primero
-            </Button>
+            isAdmin ? (
+              <Button variant="matcha" onClick={newProduct}>
+                Crear el primero
+              </Button>
+            ) : null
           }
         />
       ) : (
@@ -413,14 +428,16 @@ export function ProductsModule() {
                     <div className="flex shrink-0 items-center gap-3">
                       {editingPriceId === p.id ? (
                         <input
-                          type="number"
-                          min={0}
-                          step="any"
+                          type="text"
                           inputMode="decimal"
+                          autoComplete="off"
                           autoFocus
                           aria-label={`Nuevo precio de ${p.name}`}
                           value={priceDraft}
-                          onChange={(e) => setPriceDraft(e.target.value)}
+                          onChange={(e) => {
+                            const text = numericText(e.target.value);
+                            if (text !== null) setPriceDraft(text);
+                          }}
                           onKeyDown={(e) => {
                             if (e.key === "Enter") e.currentTarget.blur();
                             if (e.key === "Escape") {
@@ -431,7 +448,7 @@ export function ProductsModule() {
                           onBlur={() => commitPrice(p)}
                           className="focus-ring w-24 rounded-full border border-matcha bg-white px-3 py-1.5 text-center text-sm font-extrabold text-ink"
                         />
-                      ) : (
+                      ) : isAdmin ? (
                         <button
                           type="button"
                           aria-label={`Editar precio de ${p.name}`}
@@ -440,6 +457,10 @@ export function ProductsModule() {
                         >
                           {money(p.price, currency)}
                         </button>
+                      ) : (
+                        <span className="rounded-full border border-line bg-paper px-3.5 py-1.5 text-sm font-extrabold text-ink">
+                          {money(p.price, currency)}
+                        </span>
                       )}
                       <Toggle
                         checked={p.active}
@@ -473,16 +494,20 @@ export function ProductsModule() {
                         ▾
                       </span>
                     </button>
-                    <span className="text-line" aria-hidden>
-                      ·
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => editProduct(p)}
-                      className="focus-ring rounded-full text-xs font-extrabold text-muted hover:text-ink"
-                    >
-                      Editar producto
-                    </button>
+                    {isAdmin ? (
+                      <>
+                        <span className="text-line" aria-hidden>
+                          ·
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => editProduct(p)}
+                          className="focus-ring rounded-full text-xs font-extrabold text-muted hover:text-ink"
+                        >
+                          Editar producto
+                        </button>
+                      </>
+                    ) : null}
                   </div>
 
                   {isOpen ? (
@@ -524,7 +549,12 @@ export function ProductsModule() {
                           </p>
                         )}
 
-                        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-3">
+                        <div
+                          className={cx(
+                            "mt-4 flex-wrap items-center gap-2 border-t border-line pt-3",
+                            isAdmin ? "flex" : "hidden",
+                          )}
+                        >
                           <ImageUpload
                             target={{ purpose: "producto", productId: p.id }}
                             label={p.imageKey ? "Cambiar foto" : "Subir foto"}
@@ -547,7 +577,7 @@ export function ProductsModule() {
                         </div>
                       </div>
 
-                      <div>
+                      <div className={isAdmin ? undefined : "hidden"}>
                         <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-muted">
                           Personalización
                         </p>
@@ -611,343 +641,351 @@ export function ProductsModule() {
         </>
       )}
 
-      {/* ------------------------------- Categorías -------------------------------- */}
-      <Card>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="eyebrow">Secciones de la carta</p>
-            <h2 className="display mt-1 text-xl text-ink">Categorías</h2>
-            <p className="mt-1 max-w-lg text-xs leading-5 text-muted">
-              La carta no está casada con el café: crea las secciones que vendas
-              — mercancía, matcha para llevar, temporada — y ordénalas como
-              quieres verlas en el punto de venta.
-            </p>
+      {/*
+       * Catálogo global: categorías, leches y extras. Cambia lo que se puede
+       * pedir y lo que cuesta, así que no se le muestra al empleado.
+       */}
+      {isAdmin ? (
+        <>
+        {/* ------------------------------- Categorías -------------------------------- */}
+        <Card>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="eyebrow">Secciones de la carta</p>
+              <h2 className="display mt-1 text-xl text-ink">Categorías</h2>
+              <p className="mt-1 max-w-lg text-xs leading-5 text-muted">
+                La carta no está casada con el café: crea las secciones que vendas
+                — mercancía, matcha para llevar, temporada — y ordénalas como
+                quieres verlas en el punto de venta.
+              </p>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                setCategoryForm({
+                  label: "",
+                  emoji: CATEGORY_FALLBACK_EMOJI,
+                  active: true,
+                })
+              }
+            >
+              + Nueva categoría
+            </Button>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() =>
-              setCategoryForm({
-                label: "",
-                emoji: CATEGORY_FALLBACK_EMOJI,
-                active: true,
-              })
-            }
-          >
-            + Nueva categoría
-          </Button>
-        </div>
 
-        <ul className="mt-5 space-y-2.5">
-          {state.categories.map((c, index) => {
-            const count = categoryCount(c.id);
-            return (
-              <li
-                key={c.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-xl2 border border-line bg-paper px-3 py-2.5"
-              >
-                <div className="flex min-w-0 items-start gap-3">
-                  <div className="flex shrink-0 flex-col">
-                    <button
-                      type="button"
-                      disabled={busy || index === 0}
-                      aria-label={`Subir ${c.label}`}
-                      onClick={() =>
-                        void submit(() => moveCategory(c.id, "arriba"), {
-                          silent: true,
-                        })
-                      }
-                      className="focus-ring rounded text-[11px] leading-4 text-muted hover:text-ink disabled:opacity-30"
-                    >
-                      ▲
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy || index === state.categories.length - 1}
-                      aria-label={`Bajar ${c.label}`}
-                      onClick={() =>
-                        void submit(() => moveCategory(c.id, "abajo"), {
-                          silent: true,
-                        })
-                      }
-                      className="focus-ring rounded text-[11px] leading-4 text-muted hover:text-ink disabled:opacity-30"
-                    >
-                      ▼
-                    </button>
-                  </div>
-
-                  <span className="text-xl" aria-hidden>
-                    {c.emoji}
-                  </span>
-
-                  <div className="min-w-0">
-                    <p className="flex flex-wrap items-center gap-2 text-sm font-bold text-ink">
-                      {c.label}
-                      {!c.active ? <Badge tone="danger">Oculta</Badge> : null}
-                    </p>
-                    <p className="text-[11px] text-muted">
-                      {count
-                        ? `${count} producto${count === 1 ? "" : "s"}`
-                        : "Sin productos todavía"}
-                    </p>
-                    <div className="mt-1 flex flex-wrap gap-2">
+          <ul className="mt-5 space-y-2.5">
+            {state.categories.map((c, index) => {
+              const count = categoryCount(c.id);
+              return (
+                <li
+                  key={c.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl2 border border-line bg-paper px-3 py-2.5"
+                >
+                  <div className="flex min-w-0 items-start gap-3">
+                    <div className="flex shrink-0 flex-col">
                       <button
                         type="button"
+                        disabled={busy || index === 0}
+                        aria-label={`Subir ${c.label}`}
                         onClick={() =>
-                          setCategoryForm({
-                            id: c.id,
-                            label: c.label,
-                            emoji: c.emoji,
-                            active: c.active,
+                          void submit(() => moveCategory(c.id, "arriba"), {
+                            silent: true,
                           })
                         }
-                        className="focus-ring rounded-full text-[11px] font-extrabold text-muted hover:text-ink"
+                        className="focus-ring rounded text-[11px] leading-4 text-muted hover:text-ink disabled:opacity-30"
                       >
-                        Editar
+                        ▲
                       </button>
-                      {count ? (
+                      <button
+                        type="button"
+                        disabled={busy || index === state.categories.length - 1}
+                        aria-label={`Bajar ${c.label}`}
+                        onClick={() =>
+                          void submit(() => moveCategory(c.id, "abajo"), {
+                            silent: true,
+                          })
+                        }
+                        className="focus-ring rounded text-[11px] leading-4 text-muted hover:text-ink disabled:opacity-30"
+                      >
+                        ▼
+                      </button>
+                    </div>
+
+                    <span className="text-xl" aria-hidden>
+                      {c.emoji}
+                    </span>
+
+                    <div className="min-w-0">
+                      <p className="flex flex-wrap items-center gap-2 text-sm font-bold text-ink">
+                        {c.label}
+                        {!c.active ? <Badge tone="danger">Oculta</Badge> : null}
+                      </p>
+                      <p className="text-[11px] text-muted">
+                        {count
+                          ? `${count} producto${count === 1 ? "" : "s"}`
+                          : "Sin productos todavía"}
+                      </p>
+                      <div className="mt-1 flex flex-wrap gap-2">
                         <button
                           type="button"
-                          disabled={busy || state.categories.length < 2}
-                          onClick={() => askCategoryDelete(c)}
-                          className="focus-ring rounded-full text-[11px] font-extrabold text-danger hover:opacity-80 disabled:opacity-40"
+                          onClick={() =>
+                            setCategoryForm({
+                              id: c.id,
+                              label: c.label,
+                              emoji: c.emoji,
+                              active: c.active,
+                            })
+                          }
+                          className="focus-ring rounded-full text-[11px] font-extrabold text-muted hover:text-ink"
                         >
-                          Eliminar…
+                          Editar
                         </button>
-                      ) : (
+                        {count ? (
+                          <button
+                            type="button"
+                            disabled={busy || state.categories.length < 2}
+                            onClick={() => askCategoryDelete(c)}
+                            className="focus-ring rounded-full text-[11px] font-extrabold text-danger hover:opacity-80 disabled:opacity-40"
+                          >
+                            Eliminar…
+                          </button>
+                        ) : (
+                          <ConfirmButton
+                            label="Eliminar"
+                            confirmLabel="Sí"
+                            disabled={busy}
+                            onConfirm={() =>
+                              void submit(() => deleteCategory(c.id), {
+                                title: "Categoría eliminada",
+                                detail: c.label,
+                              })
+                            }
+                          />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <Toggle
+                    checked={c.active}
+                    disabled={busy}
+                    onChange={() =>
+                      void submit(() => toggleCategory(c.id), { silent: true })
+                    }
+                    label={`Ofrecer la categoría ${c.label}`}
+                  />
+                </li>
+              );
+            })}
+            {!state.categories.length ? (
+              <li className="rounded-xl2 border border-dashed border-line px-4 py-8 text-center text-xs leading-5 text-muted">
+                Sin categorías: crea la primera para poder dar de alta productos.
+              </li>
+            ) : null}
+          </ul>
+
+          <p className="mt-4 text-[11px] leading-5 text-muted">
+            Una categoría oculta deja de ofrecerse — no sale como filtro en el
+            punto de venta ni como opción al crear un producto — pero lo que ya
+            está dentro se sigue vendiendo. Para sacar productos del menú, páusalos
+            uno a uno.
+          </p>
+        </Card>
+
+        {/* --------------------- Opciones globales de personalización --------------------- */}
+        <Card>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="eyebrow">Opciones globales</p>
+              <h2 className="display mt-1 text-xl text-ink">
+                Leches y extras de toda la carta
+              </h2>
+              <p className="mt-1 max-w-lg text-xs leading-5 text-muted">
+                Lo que enciendas aquí aparece como opción en cada bebida que lo
+                permita, y descuenta el insumo que le asocies.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-6 md:grid-cols-2">
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-muted">
+                  Leches
+                </p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    setMilkForm({
+                      name: "",
+                      surcharge: 0,
+                      ingredientId: null,
+                      available: true,
+                    })
+                  }
+                >
+                  + Agregar
+                </Button>
+              </div>
+              <ul className="mt-3 space-y-2.5">
+                {state.milks.map((m) => (
+                  <li key={m.id} className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="flex flex-wrap items-center gap-2 text-sm font-bold text-ink">
+                        {m.name}
+                        {m.surcharge > 0 ? (
+                          <span className="text-xs font-extrabold text-matcha-deep">
+                            +{money(m.surcharge, currency)}
+                          </span>
+                        ) : null}
+                        {!m.available ? <Badge tone="danger">Apagada</Badge> : null}
+                      </p>
+                      <p className="text-[11px] text-muted">
+                        {m.ingredientId
+                          ? `Descuenta: ${ingredientName(m.ingredientId)}`
+                          : "No descuenta inventario"}
+                      </p>
+                      <div className="mt-1 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setMilkForm({
+                              id: m.id,
+                              name: m.name,
+                              surcharge: m.surcharge,
+                              ingredientId: m.ingredientId,
+                              available: m.available,
+                            })
+                          }
+                          className="focus-ring rounded-full text-[11px] font-extrabold text-muted hover:text-ink"
+                        >
+                          Editar
+                        </button>
                         <ConfirmButton
                           label="Eliminar"
                           confirmLabel="Sí"
                           disabled={busy}
                           onConfirm={() =>
-                            void submit(() => deleteCategory(c.id), {
-                              title: "Categoría eliminada",
-                              detail: c.label,
+                            void submit(() => deleteMilk(m.id), {
+                              title: "Leche eliminada",
+                              detail: m.name,
                             })
                           }
                         />
-                      )}
+                      </div>
                     </div>
-                  </div>
-                </div>
+                    <Toggle
+                      checked={m.available}
+                      disabled={busy}
+                      onChange={() =>
+                        void submit(() => toggleMilk(m.id), { silent: true })
+                      }
+                      label={`Leche ${m.name} disponible en el menú`}
+                    />
+                  </li>
+                ))}
+                {!state.milks.length ? (
+                  <li className="text-xs leading-5 text-muted">
+                    Sin leches registradas: las bebidas con opción de leche no
+                    mostrarán alternativas.
+                  </li>
+                ) : null}
+              </ul>
+            </div>
 
-                <Toggle
-                  checked={c.active}
-                  disabled={busy}
-                  onChange={() =>
-                    void submit(() => toggleCategory(c.id), { silent: true })
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-muted">
+                  Extras
+                </p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    setExtraForm({
+                      name: "",
+                      price: 0,
+                      available: true,
+                      recipe: [],
+                    })
                   }
-                  label={`Ofrecer la categoría ${c.label}`}
-                />
-              </li>
-            );
-          })}
-          {!state.categories.length ? (
-            <li className="rounded-xl2 border border-dashed border-line px-4 py-8 text-center text-xs leading-5 text-muted">
-              Sin categorías: crea la primera para poder dar de alta productos.
-            </li>
-          ) : null}
-        </ul>
-
-        <p className="mt-4 text-[11px] leading-5 text-muted">
-          Una categoría oculta deja de ofrecerse — no sale como filtro en el
-          punto de venta ni como opción al crear un producto — pero lo que ya
-          está dentro se sigue vendiendo. Para sacar productos del menú, páusalos
-          uno a uno.
-        </p>
-      </Card>
-
-      {/* --------------------- Opciones globales de personalización --------------------- */}
-      <Card>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="eyebrow">Opciones globales</p>
-            <h2 className="display mt-1 text-xl text-ink">
-              Leches y extras de toda la carta
-            </h2>
-            <p className="mt-1 max-w-lg text-xs leading-5 text-muted">
-              Lo que enciendas aquí aparece como opción en cada bebida que lo
-              permita, y descuenta el insumo que le asocies.
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-5 grid gap-6 md:grid-cols-2">
-          <div>
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-muted">
-                Leches
-              </p>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() =>
-                  setMilkForm({
-                    name: "",
-                    surcharge: 0,
-                    ingredientId: null,
-                    available: true,
-                  })
-                }
-              >
-                + Agregar
-              </Button>
-            </div>
-            <ul className="mt-3 space-y-2.5">
-              {state.milks.map((m) => (
-                <li key={m.id} className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="flex flex-wrap items-center gap-2 text-sm font-bold text-ink">
-                      {m.name}
-                      {m.surcharge > 0 ? (
+                >
+                  + Agregar
+                </Button>
+              </div>
+              <ul className="mt-3 space-y-2.5">
+                {state.extras.map((e) => (
+                  <li key={e.id} className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="flex flex-wrap items-center gap-2 text-sm font-bold text-ink">
+                        {e.name}
                         <span className="text-xs font-extrabold text-matcha-deep">
-                          +{money(m.surcharge, currency)}
+                          +{money(e.price, currency)}
                         </span>
-                      ) : null}
-                      {!m.available ? <Badge tone="danger">Apagada</Badge> : null}
-                    </p>
-                    <p className="text-[11px] text-muted">
-                      {m.ingredientId
-                        ? `Descuenta: ${ingredientName(m.ingredientId)}`
-                        : "No descuenta inventario"}
-                    </p>
-                    <div className="mt-1 flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setMilkForm({
-                            id: m.id,
-                            name: m.name,
-                            surcharge: m.surcharge,
-                            ingredientId: m.ingredientId,
-                            available: m.available,
-                          })
-                        }
-                        className="focus-ring rounded-full text-[11px] font-extrabold text-muted hover:text-ink"
-                      >
-                        Editar
-                      </button>
-                      <ConfirmButton
-                        label="Eliminar"
-                        confirmLabel="Sí"
-                        disabled={busy}
-                        onConfirm={() =>
-                          void submit(() => deleteMilk(m.id), {
-                            title: "Leche eliminada",
-                            detail: m.name,
-                          })
-                        }
-                      />
+                        {!e.available ? <Badge tone="danger">Apagado</Badge> : null}
+                      </p>
+                      <p className="text-[11px] text-muted">
+                        {e.recipe.length
+                          ? `Descuenta: ${e.recipe
+                              .map((r) => ingredientName(r.ingredientId))
+                              .join(", ")}`
+                          : "Sin receta asociada"}
+                      </p>
+                      <div className="mt-1 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExtraForm({
+                              id: e.id,
+                              name: e.name,
+                              price: e.price,
+                              available: e.available,
+                              recipe: e.recipe.map((r) => ({
+                                ingredientId: r.ingredientId,
+                                qty: r.qty,
+                              })),
+                            })
+                          }
+                          className="focus-ring rounded-full text-[11px] font-extrabold text-muted hover:text-ink"
+                        >
+                          Editar
+                        </button>
+                        <ConfirmButton
+                          label="Eliminar"
+                          confirmLabel="Sí"
+                          disabled={busy}
+                          onConfirm={() =>
+                            void submit(() => deleteExtra(e.id), {
+                              title: "Extra eliminado",
+                              detail: e.name,
+                            })
+                          }
+                        />
+                      </div>
                     </div>
-                  </div>
-                  <Toggle
-                    checked={m.available}
-                    disabled={busy}
-                    onChange={() =>
-                      void submit(() => toggleMilk(m.id), { silent: true })
-                    }
-                    label={`Leche ${m.name} disponible en el menú`}
-                  />
-                </li>
-              ))}
-              {!state.milks.length ? (
-                <li className="text-xs leading-5 text-muted">
-                  Sin leches registradas: las bebidas con opción de leche no
-                  mostrarán alternativas.
-                </li>
-              ) : null}
-            </ul>
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-muted">
-                Extras
-              </p>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() =>
-                  setExtraForm({
-                    name: "",
-                    price: 0,
-                    available: true,
-                    recipe: [],
-                  })
-                }
-              >
-                + Agregar
-              </Button>
+                    <Toggle
+                      checked={e.available}
+                      disabled={busy}
+                      onChange={() =>
+                        void submit(() => toggleExtra(e.id), { silent: true })
+                      }
+                      label={`Extra ${e.name} disponible en el menú`}
+                    />
+                  </li>
+                ))}
+                {!state.extras.length ? (
+                  <li className="text-xs leading-5 text-muted">
+                    Sin extras registrados.
+                  </li>
+                ) : null}
+              </ul>
             </div>
-            <ul className="mt-3 space-y-2.5">
-              {state.extras.map((e) => (
-                <li key={e.id} className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="flex flex-wrap items-center gap-2 text-sm font-bold text-ink">
-                      {e.name}
-                      <span className="text-xs font-extrabold text-matcha-deep">
-                        +{money(e.price, currency)}
-                      </span>
-                      {!e.available ? <Badge tone="danger">Apagado</Badge> : null}
-                    </p>
-                    <p className="text-[11px] text-muted">
-                      {e.recipe.length
-                        ? `Descuenta: ${e.recipe
-                            .map((r) => ingredientName(r.ingredientId))
-                            .join(", ")}`
-                        : "Sin receta asociada"}
-                    </p>
-                    <div className="mt-1 flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setExtraForm({
-                            id: e.id,
-                            name: e.name,
-                            price: e.price,
-                            available: e.available,
-                            recipe: e.recipe.map((r) => ({
-                              ingredientId: r.ingredientId,
-                              qty: r.qty,
-                            })),
-                          })
-                        }
-                        className="focus-ring rounded-full text-[11px] font-extrabold text-muted hover:text-ink"
-                      >
-                        Editar
-                      </button>
-                      <ConfirmButton
-                        label="Eliminar"
-                        confirmLabel="Sí"
-                        disabled={busy}
-                        onConfirm={() =>
-                          void submit(() => deleteExtra(e.id), {
-                            title: "Extra eliminado",
-                            detail: e.name,
-                          })
-                        }
-                      />
-                    </div>
-                  </div>
-                  <Toggle
-                    checked={e.available}
-                    disabled={busy}
-                    onChange={() =>
-                      void submit(() => toggleExtra(e.id), { silent: true })
-                    }
-                    label={`Extra ${e.name} disponible en el menú`}
-                  />
-                </li>
-              ))}
-              {!state.extras.length ? (
-                <li className="text-xs leading-5 text-muted">
-                  Sin extras registrados.
-                </li>
-              ) : null}
-            </ul>
           </div>
-        </div>
-      </Card>
+        </Card>
+        </>
+      ) : null}
 
       {/* ---------------------------- Modal de producto ---------------------------- */}
       <Modal
@@ -1112,14 +1150,10 @@ export function ProductsModule() {
             </Field>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Cargo extra" hint="0 si no cuesta más">
-                <Input
-                  type="number"
-                  min={0}
-                  step="any"
-                  inputMode="decimal"
+                <NumberInput
                   value={milkForm.surcharge}
-                  onChange={(e) =>
-                    setMilkForm({ ...milkForm, surcharge: Number(e.target.value) })
+                  onValueChange={(v) =>
+                    setMilkForm({ ...milkForm, surcharge: v ?? 0 })
                   }
                 />
               </Field>
@@ -1186,14 +1220,10 @@ export function ProductsModule() {
               />
             </Field>
             <Field label="Precio">
-              <Input
-                type="number"
-                min={0}
-                step="any"
-                inputMode="decimal"
+              <NumberInput
                 value={extraForm.price}
-                onChange={(e) =>
-                  setExtraForm({ ...extraForm, price: Number(e.target.value) })
+                onValueChange={(v) =>
+                  setExtraForm({ ...extraForm, price: v ?? 0 })
                 }
               />
             </Field>
@@ -1220,16 +1250,12 @@ export function ProductsModule() {
                         </option>
                       ))}
                     </Select>
-                    <Input
-                      type="number"
-                      min={0}
-                      step="any"
-                      inputMode="decimal"
+                    <NumberInput
                       aria-label="Cantidad"
                       value={row.qty}
-                      onChange={(e) => {
+                      onValueChange={(v) => {
                         const recipe = [...extraForm.recipe];
-                        recipe[idx] = { ...row, qty: Number(e.target.value) };
+                        recipe[idx] = { ...row, qty: v ?? 0 };
                         setExtraForm({ ...extraForm, recipe });
                       }}
                       className="w-24 shrink-0"
@@ -1497,14 +1523,14 @@ function ProductForm({
         </Field>
         <Field label={`Precio (${currency})`}>
           <Input
-            type="number"
-            min={0}
-            step="any"
+            type="text"
             inputMode="decimal"
+            autoComplete="off"
             placeholder="0"
             value={priceText}
             onChange={(e) => {
-              const text = e.target.value;
+              const text = numericText(e.target.value);
+              if (text === null) return;
               setPriceText(text);
               const parsed = Number(text);
               onChange({
@@ -1612,16 +1638,12 @@ function ProductForm({
                   ))}
                 </Select>
                 <span className="inline-flex shrink-0 items-center gap-1">
-                  <Input
-                    type="number"
-                    min={0}
-                    step="any"
-                    inputMode="decimal"
+                  <NumberInput
                     aria-label="Cantidad"
                     value={row.qty}
-                    onChange={(e) => {
+                    onValueChange={(v) => {
                       const recipe = [...value.recipe];
-                      recipe[idx] = { ...row, qty: Number(e.target.value) };
+                      recipe[idx] = { ...row, qty: v ?? 0 };
                       onChange({ ...value, recipe });
                     }}
                     className="w-24"

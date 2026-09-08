@@ -237,7 +237,7 @@ export async function adjustStock(
   reason: MovementReasonDb = "ajuste",
   note?: string,
 ): Promise<ActionResult<number>> {
-  return run(requireAdmin, async (staff) => {
+  return run(requireStaff, async (staff) => {
     const value = reqNumber(delta, "El ajuste", {
       min: -1_000_000,
       max: 1_000_000,
@@ -268,7 +268,7 @@ export async function receiveStock(
   amount: number,
   note?: string,
 ): Promise<ActionResult<number>> {
-  return run(requireAdmin, async (staff) => {
+  return run(requireStaff, async (staff) => {
     const value = reqNumber(amount, "La cantidad recibida", {
       min: 0.001,
       max: 1_000_000,
@@ -293,7 +293,7 @@ export async function setStock(
   counted: number,
   note?: string,
 ): Promise<ActionResult<number>> {
-  return run(requireAdmin, async (staff) => {
+  return run(requireStaff, async (staff) => {
     const id = reqId(ingredientId, "El insumo");
     const target = reqNumber(counted, "La cantidad contada", { min: 0 });
 

@@ -16,6 +16,7 @@ import {
   PageHeader,
   Stat,
   cx,
+  numericText,
 } from "@/components/ui";
 
 export function CashCloseModule() {
@@ -308,12 +309,14 @@ export function CashCloseModule() {
               <div className="mt-4">
                 <Field label="Efectivo contado">
                   <Input
-                    type="number"
+                    type="text"
                     inputMode="decimal"
-                    min={0}
-                    step="0.5"
+                    autoComplete="off"
                     value={counted}
-                    onChange={(e) => setCounted(e.target.value)}
+                    onChange={(e) => {
+                      const text = numericText(e.target.value);
+                      if (text !== null) setCounted(text);
+                    }}
                     aria-label="Efectivo contado"
                     placeholder="0"
                     className="py-3 text-lg"
