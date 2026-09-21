@@ -619,7 +619,7 @@ function buildSections(ctx: ManualContext): Section[] {
         {
           kind: "aviso",
           tone: "matcha",
-          text: "El panel de arriba usa las ventas ya cargadas en la aplicación, por eso responde al instante. El histórico pregunta a la base de datos cada vez, con los días contados en la zona horaria del negocio: es el mismo criterio que usa el corte de caja, así que las cifras cuadran. Los tickets anulados se cuentan, pero nunca suman dinero.",
+          text: "El panel de arriba usa las ventas ya cargadas en la aplicación, por eso responde al instante. El histórico se consulta al momento y los días se cuentan en la zona horaria del negocio: es el mismo criterio del corte de caja, así que las cifras cuadran. Los tickets anulados se cuentan, pero nunca suman dinero.",
         },
       ],
     },
@@ -794,7 +794,7 @@ function buildSections(ctx: ManualContext): Section[] {
             "Nadie lee la base de datos desde fuera. El único camino es el servidor de la aplicación, después de comprobar quién eres y qué puedes hacer.",
             `Todo movimiento de inventario${lealtadActiva ? " y de puntos" : ""} queda auditado: quién, cuánto y por qué.`,
             "El historial de una venta no depende del menú de hoy: cada renglón guardó su propia copia del producto, así que borrar del menú nunca borra el pasado.",
-            "La aplicación carga los últimos días de ventas para ser rápida; el histórico completo permanece en la base de datos.",
+            "La aplicación carga los últimos días de ventas para ser rápida, y ninguna venta se pierde por eso: el histórico completo se consulta desde Reportes, hasta la primera que se cobró.",
             "Los pagos con tarjeta y Mercado Pago se registran, no se procesan: no hay terminal conectada, el corte los separa para conciliarlos.",
           ],
         },

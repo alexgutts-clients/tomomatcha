@@ -357,17 +357,6 @@ export function ReportsModule() {
               ))}
             </div>
           </Card>
-
-          <Card>
-            <p className="eyebrow">Alcance de los reportes</p>
-            <p className="mt-2 text-xs leading-5 text-muted">
-              Este panel trabaja con las ventas de los últimos días, que ya están
-              cargadas en la aplicación, para responder al instante. El{" "}
-              <strong className="text-ink">histórico completo</strong> está abajo:
-              esa sección consulta la base de datos cada vez, así que llega hasta
-              la primera venta que se cobró.
-            </p>
-          </Card>
         </div>
       </div>
 

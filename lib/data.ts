@@ -680,17 +680,28 @@ export async function loadSalesHistory(
   });
 
   if (error) {
-    // La función llegó en una migración aparte. Si todavía no se aplicó, el
-    // aviso nombra el archivo: es media hora de búsqueda ahorrada. Se exige que
-    // el error diga que no existe, para no confundir un fallo cualquiera de la
-    // consulta con una migración pendiente.
+    /*
+     * La función llegó en una migración aparte, así que puede faltar en una
+     * instalación que todavía no la aplicó. Se exige que el error diga que no
+     * existe, para no confundir un fallo cualquiera con una actualización
+     * pendiente.
+     *
+     * Lo que ve quien atiende la barra es una frase sin tecnicismos: el nombre
+     * del archivo y el panel donde se pega no le sirven de nada y sólo asustan.
+     * El detalle va a la consola del servidor, que es donde lo busca quien sí
+     * puede arreglarlo.
+     */
     const missing =
       error.code === "PGRST202" ||
       (error.message.includes("sales_history") &&
         /does not exist|no existe|could not find/i.test(error.message));
     if (missing) {
+      console.error(
+        "Falta aplicar la migración supabase/migrations/20260824000011_historico_ventas.sql (función sales_history).",
+        error.message,
+      );
       throw new Error(
-        "El histórico de ventas necesita aplicar la migración supabase/migrations/20260824000011_historico_ventas.sql en el editor SQL de Supabase.",
+        "El histórico de ventas todavía no está disponible: falta una actualización de la base de datos. Pídesela a quien instaló la aplicación.",
       );
     }
     throw new Error(`No se pudo leer el histórico: ${error.message}`);
