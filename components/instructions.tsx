@@ -591,7 +591,7 @@ function buildSections(ctx: ManualContext): Section[] {
       title: "Reportes",
       audience: "admin",
       summary:
-        "Ingresos, ticket promedio, productos más vendidos, métodos de pago y horas pico.",
+        "Ingresos, ticket promedio, productos más vendidos, métodos de pago, horas pico y el histórico completo de ventas.",
       blocks: [
         {
           kind: "lista",
@@ -605,9 +605,21 @@ function buildSections(ctx: ManualContext): Section[] {
           ],
         },
         {
+          kind: "lista",
+          title: "Histórico completo, abajo del panel",
+          items: [
+            "Todas las ventas desde la primera que se cobró, no sólo las de esta semana.",
+            "Agrupadas por día, semana, mes o año: elige el rango con los atajos (7 días, 30 días, este mes, este año, todo) o escribe las fechas a mano.",
+            "Toca un periodo de la tabla para abrirlo: el año enseña sus meses, el mes sus días.",
+            "Filtra por método de pago, y decide si quieres ver los tickets anulados en la lista.",
+            "Abre cualquier ticket para ver qué se llevó el cliente, el descuento y la propina.",
+            "«Descargar CSV» guarda los tickets del rango en un archivo que abre Excel (hasta 5 000 por archivo).",
+          ],
+        },
+        {
           kind: "aviso",
           tone: "matcha",
-          text: "Los reportes trabajan con las ventas de los últimos días para que la aplicación siga siendo rápida. El histórico completo no se pierde: vive en la base de datos y se consulta desde Supabase.",
+          text: "El panel de arriba usa las ventas ya cargadas en la aplicación, por eso responde al instante. El histórico pregunta a la base de datos cada vez, con los días contados en la zona horaria del negocio: es el mismo criterio que usa el corte de caja, así que las cifras cuadran. Los tickets anulados se cuentan, pero nunca suman dinero.",
         },
       ],
     },

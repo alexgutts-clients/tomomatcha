@@ -421,3 +421,126 @@ export const EXPIRY_META: Record<
   pronto: { label: "Por vencer", tone: "amber" },
   ok: { label: "En buen estado", tone: "matcha" },
 };
+
+/* ============================================================================
+ * Histórico de ventas.
+ *
+ * El estado de la aplicación sólo carga los últimos días. Estos tipos
+ * describen lo que devuelve la consulta aparte (`sales_history` en Postgres),
+ * que sí recorre todas las ventas: la suma se hace en la base y al navegador
+ * sólo llega el resumen más una página de tickets.
+ * ========================================================================== */
+
+/** Cómo se agrupan los periodos del histórico. */
+export type HistoryBucket = "dia" | "semana" | "mes" | "ano";
+
+/** Tickets por página de la lista del histórico. */
+export const HISTORY_PAGE_SIZE = 50;
+
+/**
+ * Tope de tickets que devuelve una sola consulta. Lo impone también la función
+ * de Postgres, así que ponerlo aquí evita el viaje perdido, no la protección.
+ */
+export const HISTORY_EXPORT_MAX = 5000;
+
+export const HISTORY_BUCKETS: { id: HistoryBucket; label: string }[] = [
+  { id: "dia", label: "Día" },
+  { id: "semana", label: "Semana" },
+  { id: "mes", label: "Mes" },
+  { id: "ano", label: "Año" },
+];
+
+/** Los mismos identificadores sueltos, para validar lo que llega de fuera. */
+export const HISTORY_BUCKET_IDS: HistoryBucket[] = HISTORY_BUCKETS.map((b) => b.id);
+
+/** Cifras de un conjunto de ventas: sirven para un periodo y para el total. */
+export interface SalesTotals {
+  /** Tickets que contaron como venta (los anulados van aparte). */
+  tickets: number;
+  /** Tickets anulados: se cuentan siempre, pero no suman dinero. */
+  cancelados: number;
+  units: number;
+  /** Consumo a precio de lista, antes de descuento. */
+  subtotal: number;
+  /** Lo que se dejó de cobrar por descuentos. */
+  discount: number;
+  /** Propina, ya incluida en `total`. */
+  tip: number;
+  total: number;
+  byPayment: Record<PaymentMethod, number>;
+}
+
+/** Un periodo del histórico (un día, una semana, un mes o un año). */
+export interface SalesPeriod extends SalesTotals {
+  /** Primer día operativo del periodo (YYYY-MM-DD). */
+  key: string;
+  /** Último día operativo del periodo (YYYY-MM-DD). */
+  end: string;
+}
+
+export interface SalesHistoryLine {
+  name: string;
+  emoji: string;
+  qty: number;
+  amount: number;
+}
+
+/** Un ticket del histórico: lo justo para reconocerlo sin cargar todo. */
+export interface SalesHistoryOrder {
+  id: string;
+  folio: number;
+  createdAt: string;
+  status: OrderStatus;
+  payment: PaymentMethod;
+  serviceMode: ServiceMode;
+  subtotal: number;
+  discountPct: number;
+  discountLabel?: string;
+  tip: number;
+  total: number;
+  units: number;
+  customerName?: string;
+  createdByName?: string;
+  items: SalesHistoryLine[];
+}
+
+/** Producto más vendido del rango. `productId` es null si ya no está en el menú. */
+export interface SalesHistoryProduct {
+  productId: string | null;
+  name: string;
+  emoji: string;
+  qty: number;
+  revenue: number;
+}
+
+export interface SalesHistoryFilters {
+  /** Día operativo inicial (YYYY-MM-DD). `null` = desde la primera venta. */
+  from?: string | null;
+  /** Día operativo final, incluido. `null` = hasta la última venta. */
+  to?: string | null;
+  bucket?: HistoryBucket;
+  payment?: PaymentMethod | null;
+  /** Mostrar los tickets anulados en la lista (el resumen siempre los cuenta). */
+  includeCancelled?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+export interface SalesHistory {
+  /** Zona horaria con la que se agruparon los periodos. */
+  tz: string;
+  bucket: HistoryBucket;
+  from: string | null;
+  to: string | null;
+  /** Días de la primera y la última venta registradas, sin filtros de por medio. */
+  firstSaleDay: string | null;
+  lastSaleDay: string | null;
+  totals: SalesTotals;
+  periods: SalesPeriod[];
+  orders: SalesHistoryOrder[];
+  /** Tickets que caben en el rango: con esto pagina la lista. */
+  orderCount: number;
+  topProducts: SalesHistoryProduct[];
+  limit: number;
+  offset: number;
+}

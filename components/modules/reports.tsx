@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useDerived, useStore } from "@/lib/store";
 import { dayKey, money, weekday } from "@/lib/format";
 import { PAYMENT_META, type PaymentMethod } from "@/lib/types";
+import { SalesHistorySection } from "@/components/modules/sales-history";
 import {
   AccessGate,
   Card,
@@ -94,6 +95,11 @@ export function ReportsModule() {
   }
   const maxHourCount = Math.max(...hourSlots.map((s) => s.count));
 
+  /*
+   * El panel de arriba mira los últimos días, que pueden estar vacíos sin que
+   * lo esté el negocio: una barra que cerró una semana sigue teniendo su
+   * histórico. Por eso el aviso sustituye al panel, no a la sección de abajo.
+   */
   if (!sales.length) {
     return (
       <div className="space-y-6">
@@ -104,9 +110,10 @@ export function ReportsModule() {
         />
         <EmptyState
           emoji="📈"
-          title="Aún no hay ventas para reportar"
-          desc="En cuanto empieces a cobrar en el punto de venta, aquí verás ingresos, productos más vendidos, métodos de pago y horas pico."
+          title="Sin ventas en los últimos días"
+          desc="El panel rápido se calcula con la última semana. En cuanto vuelvas a cobrar en el punto de venta aparecerán aquí los ingresos, los productos más vendidos y las horas pico; abajo sigue estando el histórico completo."
         />
+        <SalesHistorySection />
       </div>
     );
   }
@@ -201,7 +208,7 @@ export function ReportsModule() {
 
           {/* ---------------------------- Top productos ----------------------------- */}
           <Card>
-            <p className="eyebrow">Top productos · histórico cargado</p>
+            <p className="eyebrow">Top productos · últimos días</p>
             <div className="mt-4 space-y-3">
               {top.map((entry, i) => (
                 <div key={entry.product.id} className="flex items-center gap-3">
@@ -354,13 +361,18 @@ export function ReportsModule() {
           <Card>
             <p className="eyebrow">Alcance de los reportes</p>
             <p className="mt-2 text-xs leading-5 text-muted">
-              El panel trabaja con las ventas de los últimos días para mantenerse
-              rápido. Para el histórico completo, las ventas viven en la base de
-              datos y se pueden consultar desde Supabase.
+              Este panel trabaja con las ventas de los últimos días, que ya están
+              cargadas en la aplicación, para responder al instante. El{" "}
+              <strong className="text-ink">histórico completo</strong> está abajo:
+              esa sección consulta la base de datos cada vez, así que llega hasta
+              la primera venta que se cobró.
             </p>
           </Card>
         </div>
       </div>
+
+      {/* ---------------------------- Histórico completo ------------------------- */}
+      <SalesHistorySection />
     </div>
   );
 }

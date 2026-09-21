@@ -363,6 +363,23 @@ export type Database = {
         };
         Returns: number;
       };
+      /**
+       * Histórico de ventas ya resumido (`…0011_historico_ventas.sql`). Suma en
+       * la base para no bajar años de tickets al navegador; la zona horaria la
+       * lee de `settings`, no se recibe como parámetro.
+       */
+      sales_history: {
+        Args: {
+          p_from?: string | null;
+          p_to?: string | null;
+          p_bucket?: string;
+          p_payment?: PaymentDb | null;
+          p_include_cancelled?: boolean;
+          p_limit?: number;
+          p_offset?: number;
+        };
+        Returns: Json;
+      };
     };
     Enums: {
       staff_role: StaffRoleDb;

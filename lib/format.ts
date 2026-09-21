@@ -101,6 +101,32 @@ export function lastDayKeys(count: number, tz = DEFAULT_TZ): string[] {
   return keys;
 }
 
+/**
+ * Texto legible de un día operativo (`YYYY-MM-DD`).
+ *
+ * La clave ya se calculó en la zona del negocio, así que aquí se formatea en
+ * UTC a propósito: volver a aplicarle una zona horaria la movería un día en los
+ * husos extremos, y el 1 de marzo del reporte dejaría de ser el 1 de marzo.
+ */
+export function dayKeyLabel(
+  key: string,
+  options: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" },
+): string {
+  const [y, m, d] = key.split("-").map(Number);
+  if (!y || !m || !d) return key;
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("es-MX", {
+    ...options,
+    timeZone: "UTC",
+  });
+}
+
+/** Mueve un día operativo `days` días (negativo hacia atrás), sin husos de por medio. */
+export function shiftDayKey(key: string, days: number): string {
+  const [y, m, d] = key.split("-").map(Number);
+  if (!y || !m || !d) return key;
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
 export function minutesSince(iso: string): number {
   return Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
 }

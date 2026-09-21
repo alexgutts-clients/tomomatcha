@@ -21,6 +21,17 @@ export type ActionResult<T = undefined> =
   | { ok: true; state: AppState; data: T }
   | { ok: false; error: string; kind?: AuthError["kind"] | "config" };
 
+/**
+ * Resultado de una consulta que responde una pregunta en vez de cambiar algo:
+ * trae sus datos y nada más. No arrastra el `AppState` a propósito — un filtro
+ * de reportes se toca muchas veces seguidas, y volver a leer el estado entero
+ * en cada clic costaría una decena de consultas para devolver lo mismo que ya
+ * hay en pantalla. Las mutaciones siguen pasando por `run`, que sí lo relee.
+ */
+export type QueryResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: string; kind?: AuthError["kind"] | "config" };
+
 /** Convierte cualquier excepción en un mensaje entendible para el equipo. */
 export function describeError(error: unknown): {
   message: string;
@@ -136,6 +147,24 @@ export function optUrl(value: unknown): string | null {
   }
 }
 
+const DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Día operativo `YYYY-MM-DD`. Se comprueba que además exista en el calendario:
+ * `2026-02-31` tiene la forma correcta y no es una fecha.
+ */
+export function optDayKey(value: unknown, label = "La fecha"): string | null {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value !== "string" || !DAY_KEY_RE.test(value)) {
+    throw new ValidationError(`${label} no es válida.`);
+  }
+  const date = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) {
+    throw new ValidationError(`${label} no existe en el calendario.`);
+  }
+  return value;
+}
+
 /** Zona horaria reconocida por el sistema (se usa para el día operativo). */
 export function reqTimezone(value: unknown): string {
   const text = reqText(value, "La zona horaria", 64);
@@ -173,6 +202,24 @@ export async function run<T>(
     const state = await loadAppState(staff);
     revalidatePath("/", "layout");
     return { ok: true, state, data };
+  } catch (error) {
+    const described = describeError(error);
+    return { ok: false, error: described.message, kind: described.kind };
+  }
+}
+
+/**
+ * Consulta autorizada que no toca el estado de la aplicación: autoriza, lee y
+ * devuelve sus propios datos. Los errores se traducen igual que en `run`, así
+ * que al navegador tampoco le llega nunca una excepción.
+ */
+export async function query<T>(
+  guard: () => Promise<Staff>,
+  body: (staff: Staff) => Promise<T>,
+): Promise<QueryResult<T>> {
+  try {
+    const staff = await guard();
+    return { ok: true, data: await body(staff) };
   } catch (error) {
     const described = describeError(error);
     return { ok: false, error: described.message, kind: described.kind };

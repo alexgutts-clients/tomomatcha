@@ -141,6 +141,7 @@ El esquema vive en `supabase/migrations/` y es la única fuente de verdad:
 | `20260824000008_delete_order.sql` | `delete_order`: borrar una venta y sus efectos |
 | `20260824000009_delete_order_item.sql` | `delete_order_item`: quitar un renglón y rehacer cuentas |
 | `20260824000010_categorias.sql` | Categorías editables: tabla `categories` en lugar del enum |
+| `20260824000011_historico_ventas.sql` | `sales_history`: el histórico completo, agrupado en la base |
 
 `lib/database.types.ts` es el espejo en TypeScript del esquema. **Al cambiar una
 migración hay que actualizarlo**, o el tipado dejará de proteger.
@@ -227,6 +228,18 @@ scripts/doctor.mjs  Revisión de conexiones
   receta. Antes de borrar se devuelven los insumos y se retiran los puntos, en
   ese orden, porque después ya no habría forma de saber cuánto devolver. Tampoco
   se puede si el día de ese ticket ya tiene el corte cerrado.
+- **El histórico completo se suma en la base, no en el navegador.** La
+  aplicación sólo carga las ventas de los últimos días —esa ventana es lo que
+  la mantiene ligera cuando la cafetería lleve años vendiendo—, pero Reportes
+  necesita poder mirar el mes pasado o el año entero. Esa sección consulta
+  `sales_history` en Postgres, que agrupa por día, semana, mes o año en la zona
+  horaria del negocio (la misma que decide el día operativo del corte) y
+  devuelve los periodos ya totalizados más una página de tickets. Al navegador
+  nunca le llegan años de ventas para que los sume él, y por eso cada cambio de
+  filtro es una consulta nueva. Los tickets anulados se cuentan siempre pero no
+  suman dinero: una anulación explica un hueco en los folios, y esconderla haría
+  que el histórico mintiera. Desde ahí también se descarga el CSV de los tickets
+  del rango, hasta 5 000 por archivo.
 - **Las categorías son datos, no código.** Eran un enum de Postgres, así que
   vender mercancía o matcha en polvo pedía una migración. Ahora viven en la
   tabla `categories` y se crean, renombran, ordenan y borran desde Productos. El

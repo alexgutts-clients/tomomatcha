@@ -3,25 +3,33 @@
 import {
   ValidationError,
   oneOf,
+  optDayKey,
   optText,
+  query,
   readState,
   reqId,
   reqNumber,
   reqText,
   run,
   type ActionResult,
+  type QueryResult,
 } from "./action-utils";
 import { requireAdmin, requireStaff } from "./auth";
-import { loadSettingsRow } from "./data";
+import { loadSalesHistory, loadSettingsRow } from "./data";
 import { dayKey } from "./format";
 import { db, num } from "./supabase";
 import type { MovementReasonDb } from "./database.types";
 import {
+  HISTORY_BUCKET_IDS,
+  HISTORY_EXPORT_MAX,
+  HISTORY_PAGE_SIZE,
   ORDER_FLOW,
   type CheckoutPayload,
   type Customer,
   type OrderStatus,
   type PaymentMethod,
+  type SalesHistory,
+  type SalesHistoryFilters,
   type ServiceMode,
 } from "./types";
 
@@ -577,6 +585,47 @@ export async function searchCustomers(term: string): Promise<Customer[]> {
     since: row.since,
     lastVisit: row.last_visit,
   }));
+}
+
+/* ----------------------------- Histórico de ventas --------------------------- */
+
+/**
+ * Todas las ventas, agrupadas por día, semana, mes o año. No pasa por `run`
+ * porque no cambia nada y no necesita devolver el estado entero: es una
+ * pregunta al histórico, y se hace muchas veces seguidas mientras alguien
+ * mueve los filtros.
+ *
+ * Es de administración, como el resto de Reportes: son las cifras del negocio.
+ */
+export async function salesHistory(
+  filters: SalesHistoryFilters,
+): Promise<QueryResult<SalesHistory>> {
+  return query(requireAdmin, async () => {
+    const from = optDayKey(filters?.from, "La fecha inicial");
+    const to = optDayKey(filters?.to, "La fecha final");
+    if (from && to && from > to) {
+      throw new ValidationError(
+        "La fecha inicial es posterior a la final. Revisa el rango.",
+      );
+    }
+
+    return loadSalesHistory({
+      from,
+      to,
+      bucket: filters?.bucket
+        ? oneOf(filters.bucket, HISTORY_BUCKET_IDS, "El agrupamiento")
+        : "dia",
+      payment: filters?.payment
+        ? oneOf(filters.payment, PAYMENTS, "El método de pago")
+        : null,
+      includeCancelled: filters?.includeCancelled === true,
+      limit: reqNumber(filters?.limit ?? HISTORY_PAGE_SIZE, "El tamaño de página", {
+        min: 1,
+        max: HISTORY_EXPORT_MAX,
+      }),
+      offset: reqNumber(filters?.offset ?? 0, "La página", { min: 0 }),
+    });
+  });
 }
 
 /* ------------------------------- Corte de caja ------------------------------- */

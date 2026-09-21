@@ -38,6 +38,8 @@ Everything mutating flows through `run(guard, body)` in `lib/action-utils.ts`. I
 
 `ActionResult<T>` is `{ ok: true; state; data }` or `{ ok: false; error; kind }`. Any new server action must return this shape and go through `run` (or `readState` for pure reads) — do not write a bare server action.
 
+The one exception is a *question* that doesn't change anything and doesn't need the app state back — a report filter, a history query. Those go through `query(guard, body)` and return `QueryResult<T>` (`{ ok: true; data }` / `{ ok: false; error; kind }`): same guard-first order, same Spanish error translation, but no `loadAppState` and no `revalidatePath`, because re-reading a dozen tables on every click of a date filter would return exactly what is already on screen. `salesHistory` is the one that uses it. Mutations still go through `run`, always.
+
 ### Security model — do not weaken these
 
 - **RLS is enabled on every table with zero policies.** The Supabase anon key can read and write nothing. The only access path is the Next.js server using `service_role`, which bypasses RLS. `lib/supabase.ts` and `lib/auth.ts` are `import "server-only"` for this reason; keep that import on any module touching the DB.
@@ -58,6 +60,7 @@ Business rules live in Postgres functions, not TypeScript:
 | `delete_order_item` | `…0009_delete_order_item.sql` | Removes one line, returns its ingredients, recomputes the ticket |
 | `close_cash` | `…0002_rpc.sql`, redefined in `…0007_propina.sql` | Cash close, now also totalling tips |
 | `adjust_stock`, `adjust_points`, `business_day` | `…0002_rpc.sql` | Manual stock/point moves, operating-day calc |
+| `sales_history` | `…0011_historico_ventas.sql` | Full sales history, grouped by day/week/month/year |
 
 `…0004_harden_function_grants.sql` revokes `EXECUTE` from `PUBLIC` on these.
 
@@ -105,6 +108,10 @@ Test records must be removable in a fixed order, because each link holds the nex
 ### Loading windows
 
 `loadAppState` in `lib/data.ts` intentionally bounds what it reads: `ORDER_WINDOW_DAYS = 9`, `CUSTOMER_LIMIT = 1000`, `CASH_CLOSE_LIMIT = 60`, `PREPARED_LIMIT = 200`. Full history lives in the DB and is queried separately. Keep new fields inside a bounded window rather than loading everything.
+
+`loadSalesHistory` is what "queried separately" means in practice. It calls the `sales_history` Postgres function, which does the grouping (day / week / month / year) **in the database**, in the business timezone read from `settings` — not passed in from the client, so two people can't see different operating days. The browser gets totalled periods, top products for the range and one page of tickets (`HISTORY_PAGE_SIZE = 50`, hard cap `HISTORY_EXPORT_MAX = 5000` enforced in both TS and SQL). Never widen `loadAppState` to serve a report: add the query here instead. Its result is a single `jsonb`, so `lib/data.ts` validates it field by field the same way `parseModifiers` does — there are no row types backing it.
+
+Cancelled tickets are counted in every summary but never add money, in SQL. `includeCancelled` only decides whether they appear in the ticket list.
 
 ### Layered config
 

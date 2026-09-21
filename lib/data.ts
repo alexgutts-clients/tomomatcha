@@ -15,9 +15,19 @@ import type {
   Order,
   OrderExtraSnapshot,
   OrderItem,
+  OrderStatus,
+  PaymentMethod,
   PreparedItem,
   Product,
   RecipeItem,
+  SalesHistory,
+  SalesHistoryFilters,
+  SalesHistoryLine,
+  SalesHistoryOrder,
+  SalesHistoryProduct,
+  SalesPeriod,
+  SalesTotals,
+  ServiceMode,
   Settings,
   Staff,
   AppState,
@@ -40,6 +50,7 @@ import type {
   ProductRow,
   SettingsRow,
 } from "./database.types";
+import { HISTORY_BUCKET_IDS, HISTORY_PAGE_SIZE } from "./types";
 import { toStaff } from "./auth";
 
 /* ============================================================================
@@ -536,5 +547,169 @@ export async function loadAppState(me: Staff): Promise<AppState> {
     ),
     cashCloses: ((cashCloses.data ?? []) as CashCloseRow[]).map(toCashClose),
     media: { configured: isR2Configured(), publicBase: r2PublicBase() },
+  };
+}
+
+/* --------------------------- Histórico de ventas ----------------------------- */
+
+/* ============================================================================
+ * El histórico no cabe en `loadAppState`: son todas las ventas desde que abrió
+ * la cafetería, y la ventana de días existe justamente para no cargarlas. Vive
+ * aquí como consulta aparte, y la suma la hace Postgres (`sales_history`): al
+ * navegador sólo llegan los periodos ya totalizados y una página de tickets.
+ * ========================================================================== */
+
+const STATUS_IDS: OrderStatus[] = [
+  "nuevo",
+  "preparando",
+  "listo",
+  "entregado",
+  "cancelado",
+];
+const PAYMENT_IDS: PaymentMethod[] = ["efectivo", "tarjeta", "mercadopago"];
+
+/*
+ * El resultado llega como un único `jsonb`, así que no hay tipos de fila que
+ * lo respalden: se valida campo por campo igual que `parseModifiers`.
+ */
+function jsonObject(raw: unknown): Record<string, unknown> {
+  return raw && typeof raw === "object" && !Array.isArray(raw)
+    ? (raw as Record<string, unknown>)
+    : {};
+}
+
+function jsonArray(raw: unknown): unknown[] {
+  return Array.isArray(raw) ? raw : [];
+}
+
+function jsonInt(raw: unknown): number {
+  return Math.round(num(raw));
+}
+
+function jsonText(raw: unknown): string | null {
+  return typeof raw === "string" && raw.trim() !== "" ? raw : null;
+}
+
+function jsonOneOf<T extends string>(raw: unknown, allowed: T[], fallback: T): T {
+  return typeof raw === "string" && (allowed as string[]).includes(raw)
+    ? (raw as T)
+    : fallback;
+}
+
+function toSalesTotals(raw: unknown): SalesTotals {
+  const row = jsonObject(raw);
+  return {
+    tickets: jsonInt(row.tickets),
+    cancelados: jsonInt(row.cancelados),
+    units: jsonInt(row.units),
+    subtotal: num(row.subtotal),
+    discount: num(row.discount),
+    tip: num(row.tip),
+    total: num(row.total),
+    byPayment: {
+      efectivo: num(row.efectivo),
+      tarjeta: num(row.tarjeta),
+      mercadopago: num(row.mercadopago),
+    },
+  };
+}
+
+function toSalesPeriod(raw: unknown): SalesPeriod {
+  const row = jsonObject(raw);
+  const key = jsonText(row.key) ?? "";
+  return {
+    ...toSalesTotals(row),
+    key,
+    end: jsonText(row.end) ?? key,
+  };
+}
+
+function toHistoryLine(raw: unknown): SalesHistoryLine {
+  const row = jsonObject(raw);
+  return {
+    name: jsonText(row.name) ?? "Producto",
+    emoji: jsonText(row.emoji) ?? "🍵",
+    qty: jsonInt(row.qty),
+    amount: num(row.amount),
+  };
+}
+
+function toHistoryOrder(raw: unknown): SalesHistoryOrder {
+  const row = jsonObject(raw);
+  return {
+    id: jsonText(row.id) ?? "",
+    folio: jsonInt(row.folio),
+    createdAt: jsonText(row.createdAt) ?? new Date(0).toISOString(),
+    status: jsonOneOf(row.status, STATUS_IDS, "entregado"),
+    payment: jsonOneOf(row.payment, PAYMENT_IDS, "efectivo"),
+    serviceMode: jsonOneOf<ServiceMode>(row.serviceMode, ["aqui", "llevar"], "llevar"),
+    subtotal: num(row.subtotal),
+    discountPct: num(row.discountPct),
+    discountLabel: jsonText(row.discountLabel) ?? undefined,
+    tip: num(row.tip),
+    total: num(row.total),
+    units: jsonInt(row.units),
+    customerName: jsonText(row.customerName) ?? undefined,
+    createdByName: jsonText(row.createdByName) ?? undefined,
+    items: jsonArray(row.items).map(toHistoryLine),
+  };
+}
+
+function toHistoryProduct(raw: unknown): SalesHistoryProduct {
+  const row = jsonObject(raw);
+  return {
+    productId: jsonText(row.productId),
+    name: jsonText(row.name) ?? "Producto",
+    emoji: jsonText(row.emoji) ?? "🍵",
+    qty: jsonInt(row.qty),
+    revenue: num(row.revenue),
+  };
+}
+
+export async function loadSalesHistory(
+  filters: SalesHistoryFilters,
+): Promise<SalesHistory> {
+  const { data, error } = await db().rpc("sales_history", {
+    p_from: filters.from ?? null,
+    p_to: filters.to ?? null,
+    p_bucket: filters.bucket ?? "dia",
+    p_payment: filters.payment ?? null,
+    p_include_cancelled: filters.includeCancelled ?? false,
+    p_limit: filters.limit ?? HISTORY_PAGE_SIZE,
+    p_offset: filters.offset ?? 0,
+  });
+
+  if (error) {
+    // La función llegó en una migración aparte. Si todavía no se aplicó, el
+    // aviso nombra el archivo: es media hora de búsqueda ahorrada. Se exige que
+    // el error diga que no existe, para no confundir un fallo cualquiera de la
+    // consulta con una migración pendiente.
+    const missing =
+      error.code === "PGRST202" ||
+      (error.message.includes("sales_history") &&
+        /does not exist|no existe|could not find/i.test(error.message));
+    if (missing) {
+      throw new Error(
+        "El histórico de ventas necesita aplicar la migración supabase/migrations/20260824000011_historico_ventas.sql en el editor SQL de Supabase.",
+      );
+    }
+    throw new Error(`No se pudo leer el histórico: ${error.message}`);
+  }
+
+  const row = jsonObject(data);
+  return {
+    tz: jsonText(row.tz) ?? "UTC",
+    bucket: jsonOneOf(row.bucket, HISTORY_BUCKET_IDS, "dia"),
+    from: jsonText(row.from),
+    to: jsonText(row.to),
+    firstSaleDay: jsonText(row.firstSaleDay),
+    lastSaleDay: jsonText(row.lastSaleDay),
+    totals: toSalesTotals(row.totals),
+    periods: jsonArray(row.buckets).map(toSalesPeriod),
+    orders: jsonArray(row.orders).map(toHistoryOrder),
+    orderCount: jsonInt(row.orderCount),
+    topProducts: jsonArray(row.topProducts).map(toHistoryProduct),
+    limit: jsonInt(row.limit),
+    offset: jsonInt(row.offset),
   };
 }
