@@ -229,7 +229,7 @@ function buildSections(ctx: ManualContext): Section[] {
             },
             {
               term: "Aviso de configuración",
-              desc: "Falta conectar un servicio (base de datos, sesión o imágenes). El aviso nombra exactamente qué falta y el resto del sistema sigue funcionando.",
+              desc: "Falta conectar un servicio (base de datos, sesión o imágenes). El aviso dice cuál es y el resto del sistema sigue funcionando.",
             },
           ],
         },
@@ -845,7 +845,7 @@ function buildSections(ctx: ManualContext): Section[] {
             },
             {
               term: "«Aparece un aviso de configuración»",
-              desc: "Falta conectar algún servicio. El aviso nombra exactamente qué falta; lo resuelve quien administra la instalación.",
+              desc: "Falta conectar algún servicio. El aviso dice cuál; lo resuelve quien administra la instalación.",
             },
           ],
         },

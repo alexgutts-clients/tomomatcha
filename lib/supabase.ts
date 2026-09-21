@@ -21,8 +21,16 @@ let client: Db | null = null;
 export class ConfigError extends Error {
   readonly missing: string[];
   constructor(service: string, missing: string[]) {
+    /*
+     * Frase impersonal a propósito: el servicio se nombra en medio, así no hay
+     * que concordar género con cada uno («la base de datos», «el inicio…»).
+     *
+     * Los nombres de las variables que faltan no entran en el texto —quien lee
+     * el aviso está atendiendo la barra—, pero siguen en `missing` para
+     * `/api/health` y el registro del servidor.
+     */
     super(
-      `${service} no está configurado. Falta definir: ${missing.join(", ")}.`,
+      `Falta configurar ${service}. Avísale a quien instaló la aplicación.`,
     );
     this.name = "ConfigError";
     this.missing = missing;
@@ -35,7 +43,9 @@ export function isSupabaseConfigured(): boolean {
 
 export function db(): Db {
   const status = supabaseStatus();
-  if (!status.ok) throw new ConfigError("Supabase", status.missing);
+  // El nombre del servicio acaba en pantalla: se dice «la base de datos», que
+  // es lo que la persona entiende, y no el nombre del proveedor.
+  if (!status.ok) throw new ConfigError("la base de datos", status.missing);
 
   if (!client) {
     client = createClient<Database>(supabaseUrl!, supabaseServiceKey!, {

@@ -58,7 +58,7 @@ function client(): S3Client {
   const status = r2Status();
   const endpoint = r2Endpoint();
   if (!status.ok || !endpoint) {
-    throw new ConfigError("Cloudflare R2", status.missing);
+    throw new ConfigError("el almacenamiento de imágenes", status.missing);
   }
   if (!s3) {
     s3 = new S3Client({

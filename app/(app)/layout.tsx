@@ -33,19 +33,28 @@ export default async function AppLayout({
   const supabase = supabaseStatus();
 
   if (!clerk.ok || !supabase.ok) {
+    /*
+     * Qué variables faltan exactamente se registra aquí, en el servidor, y no
+     * en la pantalla: quien la ve puede ser la persona de la barra, para quien
+     * `NEXT_PUBLIC_…` no significa nada. Quien instala lo lee en el registro o
+     * con `npm run doctor`, que las enumera con su nombre completo.
+     */
+    console.error(
+      "Configuración incompleta. Variables de entorno sin definir:",
+      [...supabase.missing, ...clerk.missing].join(", "),
+    );
+
     const services = [];
     if (!supabase.ok) {
       services.push({
-        name: "Supabase (base de datos)",
-        missing: supabase.missing,
-        hint: "Panel de Supabase → Project Settings → API. La URL del proyecto y la llave service_role.",
+        name: "Base de datos",
+        hint: "Es donde viven los productos, las ventas y el inventario. Sin esa conexión no se puede cobrar ni consultar nada.",
       });
     }
     if (!clerk.ok) {
       services.push({
-        name: "Clerk (autenticación)",
-        missing: clerk.missing,
-        hint: "Panel de Clerk → API Keys. La llave publishable y la secret de la aplicación de TomoMatcha.",
+        name: "Inicio de sesión",
+        hint: "Es lo que identifica a cada persona del equipo y decide qué puede hacer dentro de la aplicación.",
       });
     }
     return <ConfigNotice services={services} />;

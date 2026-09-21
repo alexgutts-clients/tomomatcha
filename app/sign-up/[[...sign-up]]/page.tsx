@@ -7,13 +7,18 @@ export const metadata = { title: "Crear cuenta · TomoMatcha" };
 export default function Page() {
   const clerk = clerkStatus();
   if (!clerk.ok) {
+    // El nombre exacto de cada variable va al registro del servidor, no a la
+    // pantalla: aquí puede llegar cualquiera del equipo intentando entrar.
+    console.error(
+      "Configuración incompleta. Variables de entorno sin definir:",
+      clerk.missing.join(", "),
+    );
     return (
       <ConfigNotice
         services={[
           {
-            name: "Clerk (autenticación)",
-            missing: clerk.missing,
-            hint: "Panel de Clerk → API Keys.",
+            name: "Inicio de sesión",
+            hint: "Sin esta conexión no se pueden crear cuentas para el equipo.",
           },
         ]}
       />

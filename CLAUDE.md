@@ -115,7 +115,7 @@ Cancelled tickets are counted in every summary but never add money, in SQL. `inc
 
 ### Layered config
 
-- `lib/env.ts` — no missing env var crashes the app at boot. Each service reports `{ ok, missing }` and the UI renders a notice naming exactly what's absent, so the app can be deployed in stages.
+- `lib/env.ts` — no missing env var crashes the app at boot. Each service reports `{ ok, missing }` and the UI renders a notice naming the missing *service* in plain Spanish, so the app can be deployed in stages. The raw variable names are deliberately **not** rendered — that screen can be seen by anyone who opens the app, and `NEXT_PUBLIC_…` means nothing to whoever is behind the counter. They go to `console.error` instead, and `npm run doctor` / `/api/health` still list them exactly. For the same reason no user-facing string names a provider (Supabase, Clerk, R2): the UI says "la base de datos", "el inicio de sesión". Keep it that way when adding copy — the provider names belong in the code, the docs and the logs.
 - **Feature flags** (`settings` table, toggled in Ajustes) change real behavior, not just UI: inventory off stops stock decrementing, loyalty off stops points accruing. Gate with `FlagGate` in `components/ui.tsx`.
 - **`lib/feature-visibility.ts`** is a separate, purely cosmetic kill switch (`SHOW_LEALTAD_UI`) that hides UI without touching the DB or business flags. Don't conflate it with feature flags.
 - **Timezone** comes from settings, never the browser — the operating day and cash close depend on it. Use `dayKey`/helpers from `lib/format.ts` with the store's `tz`.

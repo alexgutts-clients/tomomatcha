@@ -39,11 +39,17 @@ function Frame({
   );
 }
 
-/** Falta configuración de infraestructura: se dice exactamente qué. */
+/*
+ * Falta configuración de infraestructura. Esta pantalla la puede ver cualquiera
+ * que abra la aplicación —también quien está detrás de la barra—, así que dice
+ * qué servicio falta en palabras corrientes y nada más. Los nombres exactos de
+ * las variables de entorno no le sirven a esa persona: van al registro del
+ * servidor, y `npm run doctor` los enumera uno por uno para quien sí instala.
+ */
 export function ConfigNotice({
   services,
 }: {
-  services: { name: string; missing: string[]; hint: string }[];
+  services: { name: string; hint: string }[];
 }) {
   return (
     <Frame
@@ -52,8 +58,8 @@ export function ConfigNotice({
       title="Falta conectar un servicio"
     >
       <p>
-        La aplicación está lista, pero necesita las llaves de acceso a los
-        servicios que usa. Estas son las variables de entorno que faltan:
+        La aplicación está lista, pero todavía le faltan las llaves de acceso a
+        uno de los servicios que usa:
       </p>
       <ul className="space-y-3">
         {services.map((service) => (
@@ -62,22 +68,13 @@ export function ConfigNotice({
             className="rounded-xl2 border border-line bg-white p-4"
           >
             <p className="text-sm font-extrabold text-ink">{service.name}</p>
-            <ul className="mt-2 space-y-1">
-              {service.missing.map((name) => (
-                <li key={name}>
-                  <code className="rounded bg-cream px-1.5 py-0.5 text-xs font-bold text-ink">
-                    {name}
-                  </code>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-2 text-xs leading-5">{service.hint}</p>
+            <p className="mt-1.5 text-xs leading-5">{service.hint}</p>
           </li>
         ))}
       </ul>
       <p className="border-t border-line pt-3 text-xs">
-        El archivo <strong>INSTRUCCIONES.md</strong> del repositorio tiene el
-        paso a paso para obtener cada valor.
+        Avísale a quien instaló la aplicación: tiene la guía con el paso a paso
+        para conectarlo.
       </p>
     </Frame>
   );
@@ -142,8 +139,9 @@ export function ErrorNotice({ message }: { message: string }) {
         {message}
       </p>
       <p>
-        Revisa que las migraciones de <code>supabase/migrations/</code> estén
-        aplicadas en el proyecto y que las llaves correspondan a ese proyecto.
+        Suele ser que la base de datos no tiene aplicada la última
+        actualización, o que las llaves de acceso apuntan a otro proyecto.
+        Quien instaló la aplicación puede revisarlo con la guía de instalación.
       </p>
       <Link
         href="/inicio"

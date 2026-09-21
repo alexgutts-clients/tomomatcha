@@ -481,9 +481,7 @@ export function SettingsModule() {
         <ul className="mt-3 divide-y divide-line text-sm">
           <li className="flex items-center justify-between gap-3 py-3">
             <span className="min-w-0">
-              <span className="block font-bold text-ink">
-                Base de datos · Supabase
-              </span>
+              <span className="block font-bold text-ink">Base de datos</span>
               <span className="text-xs text-muted">
                 Productos, ventas, inventario, clientes y cortes
               </span>

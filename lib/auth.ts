@@ -52,7 +52,7 @@ export function isClerkConfigured(): boolean {
  */
 export async function loadStaff(): Promise<Staff | null> {
   if (!isClerkConfigured()) {
-    throw new ConfigError("Clerk", clerkStatus().missing);
+    throw new ConfigError("el inicio de sesión", clerkStatus().missing);
   }
 
   const { userId } = await auth();
