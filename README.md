@@ -74,6 +74,20 @@ menú, módulos encendidos) en lugar de describir un sistema genérico. Lo que e
 apagado no se explica: las secciones de clientes y lealtad sólo aparecen si
 `SHOW_LEALTAD_UI` está encendido.
 
+**Asistente de ayuda** (botón redondo abajo a la derecha, en todas las pantallas
+con sesión): un chat con IA que le explica al equipo cómo usar el sistema. Lo ve
+cualquier cuenta activa, administrador o empleado; una cuenta que sigue en
+espera de activación no lo ve y el servidor tampoco le responde. Contesta con el
+manual completo (`lib/assistant/manual.md`) más unos datos que el servidor lee en
+cada pregunta —el perfil de quien pregunta, la pantalla en la que está, qué
+módulos están encendidos, si la caja de hoy está cerrada—, y por eso puede decir
+«eso es sólo de administradores» o «la caja ya está cerrada» sin adivinar. **No
+ve ventas, inventario, clientes ni precios**: es una guía de uso, no un analista,
+y darle acceso a los datos sólo agregaría cosas que proteger y que inventar. Va
+por OpenRouter; el modelo y la llave se cambian desde las variables de entorno
+sin tocar código. Es opcional: sin `OPENROUTER_API_KEY` el botón no aparece.
+Detalles y costos en [INSTRUCCIONES.md](INSTRUCCIONES.md), paso 7.
+
 Al **cobrar** se crea la comanda, se descuenta el inventario según la receta del
 producto (incluida la leche elegida), se suman los puntos de lealtad y se
 actualizan el panel, los reportes y el corte de caja.
@@ -162,11 +176,13 @@ app/
   sign-in, sign-up  Pantallas de Clerk
   tarjeta/[token]   Tarjeta pública de lealtad (destino del QR)
   api/health        Estado de las conexiones (usado por `npm run doctor`)
+  api/chat          Asistente de ayuda: autoriza, valida y entrega la respuesta por partes
   api/media/[...]   Sirve archivos de R2 cuando no hay dominio público
   api/qr            Genera códigos QR reales en SVG
 components/
   app-shell.tsx     Navegación, sesión y avisos
   instructions.tsx  Manual del sistema dentro de la aplicación (Inicio)
+  assistant.tsx     Botón y panel del chat de ayuda
   ui.tsx            Sistema de componentes
   modules/          Un archivo por módulo
 lib/
@@ -182,6 +198,9 @@ lib/
   r2.ts             Cloudflare R2 (URLs firmadas)
   store.tsx         Estado en el navegador y sincronización con el servidor
   catalog.ts        Catálogo inicial sugerido (opcional)
+  assistant.ts      Asistente: reglas, contexto en vivo y llamada al modelo · server-only
+  assistant-stream.ts  Asistente: validación, límite de uso y lectura de la respuesta (pura, con pruebas)
+  assistant/manual.md  Lo que sabe el asistente: el manual completo, en un documento editable
 scripts/doctor.mjs  Revisión de conexiones
 ```
 

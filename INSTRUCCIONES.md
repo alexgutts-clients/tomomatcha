@@ -18,6 +18,7 @@ credenciales, que por seguridad no se pueden copiar de forma automática.
 | Imágenes Cloudflare R2 | ⚠️ Bucket creado | Crear token de API, configurar CORS |
 | Datos de prueba de la demo | ✅ Borrados | Nada |
 | Despliegue | ⚠️ — | Cargar variables y desplegar |
+| Asistente de ayuda (opcional) | ⚠️ Código listo | Crear llave de OpenRouter con límite de crédito (paso 7) |
 
 Al terminar cada paso, `npm run doctor` te dice si quedó bien.
 
@@ -371,6 +372,30 @@ Con Vercel:
 5. Vuelve al **paso 3.4** y agrega el dominio de producción a las reglas de CORS
    de R2.
 6. Si usas Clerk en producción, cambia las llaves a `pk_live_` / `sk_live_`.
+
+---
+
+## Paso 7 · Asistente de ayuda (chat con IA) — opcional, 5 minutos
+
+Un botón redondo abajo a la derecha que responde dudas de uso con el manual del sistema (`lib/assistant/manual.md`). Sin la llave, el botón simplemente no aparece.
+
+1. Crea una cuenta en <https://openrouter.ai> y recarga un saldo pequeño.
+2. En **Keys → Create Key**, ponle un **límite de crédito** (por ejemplo 5 USD). Es el único tope real de gasto: el límite de preguntas de la aplicación es por instancia y no lo garantiza.
+3. En Vercel → **Settings → Environment Variables** agrega:
+
+```env
+OPENROUTER_API_KEY=sk-or-...
+# Opcionales:
+# OPENROUTER_MODEL=deepseek/deepseek-v4.1-flash
+# OPENROUTER_REASONING=low      # off | low | medium | high
+```
+
+4. **Vuelve a desplegar**: Vercel no aplica variables nuevas a un despliegue ya hecho.
+5. Comprueba con `npm run doctor` (valida la llave, que el modelo exista y si la llave tiene tope) o abre `/api/health` y mira `assistant`.
+
+**Costo aproximado** (estimación, no medición): el manual pesa unos 25 000 tokens; con el modelo por omisión cada pregunta cuesta del orden de una fracción de centavo de dólar si el proveedor reutiliza el prefijo, y hasta cerca de un centavo si no.
+
+**Mantenimiento:** cuando cambie algo visible del sistema (botones, permisos, mensajes, módulos), actualiza `lib/assistant/manual.md` en el mismo cambio, o el asistente contestará con seguridad algo desactualizado. El asistente no ve ventas, inventario ni clientes; solo explica cómo se usa.
 
 ---
 

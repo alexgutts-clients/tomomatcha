@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
+import { Assistant } from "@/components/assistant";
 import {
   ConfigNotice,
   ErrorNotice,
@@ -7,7 +8,7 @@ import {
 } from "@/components/setup-notice";
 import { AuthError, loadStaff } from "@/lib/auth";
 import { loadAppState } from "@/lib/data";
-import { clerkStatus, supabaseStatus } from "@/lib/env";
+import { assistantStatus, clerkStatus, supabaseStatus } from "@/lib/env";
 import { StoreProvider } from "@/lib/store";
 import { describeError } from "@/lib/action-utils";
 
@@ -78,6 +79,9 @@ export default async function AppLayout({
     return (
       <StoreProvider initialState={state}>
         <AppShell>{children}</AppShell>
+        {/* Sin la llave del asistente el botón no aparece: mejor nada que un
+            chat que sólo sabe decir que no funciona. */}
+        {assistantStatus().ok ? <Assistant role={staff.role} /> : null}
       </StoreProvider>
     );
   } catch (error) {

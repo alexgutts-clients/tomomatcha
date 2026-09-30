@@ -67,6 +67,39 @@ export function r2Endpoint(): string | null {
   return null;
 }
 
+/* --------------------------------- Asistente -------------------------------- */
+
+/**
+ * Asistente de ayuda dentro de la aplicación. Es opcional: sin la llave el
+ * botón del chat simplemente no aparece y todo lo demás funciona igual.
+ *
+ * El modelo se cambia desde el panel del hosting, sin tocar código: el precio
+ * y la calidad de los modelos baratos se mueven rápido, y no debería hacer
+ * falta un despliegue para probar otro.
+ */
+export const assistant = {
+  apiKey: read("OPENROUTER_API_KEY"),
+  model: read("OPENROUTER_MODEL") ?? "deepseek/deepseek-v4.1-flash",
+  /** Sólo para apuntar a un proxy o a un servidor de pruebas. */
+  baseUrl:
+    read("OPENROUTER_BASE_URL")?.replace(/\/+$/, "") ??
+    "https://openrouter.ai/api/v1",
+  /**
+   * Cuánto «piensa» el modelo antes de contestar: `off`, `low`, `medium` o
+   * `high`. Más razonamiento cuesta más y tarda más; con el manual completo a la
+   * vista, `low` basta para no confundir quién puede hacer qué.
+   */
+  reasoning: (["off", "low", "medium", "high"] as const).find(
+    (level) => level === read("OPENROUTER_REASONING")?.toLowerCase(),
+  ) ?? "low",
+};
+
+export function assistantStatus(): ServiceStatus {
+  const missing: string[] = [];
+  if (!assistant.apiKey) missing.push("OPENROUTER_API_KEY");
+  return { ok: missing.length === 0, missing };
+}
+
 /* --------------------------------- Arranque --------------------------------- */
 
 /**

@@ -113,6 +113,18 @@ Test records must be removable in a fixed order, because each link holds the nex
 
 Cancelled tickets are counted in every summary but never add money, in SQL. `includeCancelled` only decides whether they appear in the ticket list.
 
+### The help assistant
+
+A floating chat (`components/assistant.tsx`, mounted in `app/(app)/layout.tsx`) answers "how do I…" questions for admins and employees. Path: browser → `app/api/chat/route.ts` → `lib/assistant.ts` → OpenRouter, streamed back as plain text. It is a route handler, not a server action, because the answer arrives in pieces; it still obeys the same order — `requireStaff()` first (an inactive Clerk account gets nothing: every question costs money and the Clerk instance may be shared), then validation, then work.
+
+- **It knows only two things**: `lib/assistant/manual.md` and a "CONTEXTO EN VIVO" block the *server* builds per question (role from `staff`, current screen from a whitelist, flags, active categories, whether today's cash is closed). It has no access to sales, stock, customers or prices, and that is deliberate — do not add it; a how-to guide with data access is a bigger thing to protect and to hallucinate about. The role and flags come from the DB, never from the request body.
+- **`lib/assistant/manual.md` is a source of truth, not documentation.** When you change behaviour a user can see — a button label, a permission, a refusal message, a feature flag, a new module, a rule in a Postgres function — update the manual in the same change. A stale manual makes the bot confidently wrong, which is worse than no bot. The manual has a "Lo que el sistema NO hace" section: if you ship one of those capabilities (e.g. backdated sales), remove it there or the bot will keep telling people it is impossible.
+- Order of the system message is fixed: rules → manual → live context. The stable part goes first so the provider's prefix cache hits; putting the clock earlier would invalidate it on every question.
+- `lib/assistant-stream.ts` holds the pure parts (conversation validation, rate limiter, SSE→text) with no `server-only`, so they can be tested in isolation. Keep secrets out of it.
+- The rate limiter is per serverless instance — it stops a runaway session, it is not a spend cap. The real cap is the credit limit on the OpenRouter key; `npm run doctor` warns if it is missing.
+- Same copy rule as the rest of the UI: the assistant never names providers (it says "la base de datos", "el inicio de sesión"), and neither do its error messages. Provider detail goes to `console.error`.
+- The model and reasoning effort are env vars (`OPENROUTER_MODEL`, `OPENROUTER_REASONING`); no key means no button, not an error.
+
 ### Layered config
 
 - `lib/env.ts` — no missing env var crashes the app at boot. Each service reports `{ ok, missing }` and the UI renders a notice naming the missing *service* in plain Spanish, so the app can be deployed in stages. The raw variable names are deliberately **not** rendered — that screen can be seen by anyone who opens the app, and `NEXT_PUBLIC_…` means nothing to whoever is behind the counter. They go to `console.error` instead, and `npm run doctor` / `/api/health` still list them exactly. For the same reason no user-facing string names a provider (Supabase, Clerk, R2): the UI says "la base de datos", "el inicio de sesión". Keep it that way when adding copy — the provider names belong in the code, the docs and the logs.
@@ -127,6 +139,7 @@ Cancelled tickets are counted in every summary but never add money, in SQL. `inc
 - `lib/data.ts` — `loadAppState` plus row→domain translators.
 - `lib/catalog.ts` — optional suggested starting catalog (the DB ships empty by design; stock starts at zero because real inventory is counted, not guessed).
 - `lib/r2.ts` + `app/api/media/[...key]` — signed uploads; the API route serves R2 files when no public domain is configured.
+- `lib/assistant.ts` (server-only) / `lib/assistant-stream.ts` (pure) / `lib/assistant/manual.md` / `components/assistant.tsx` — the help assistant, see above.
 - `components/ui.tsx` — the design system. Reuse `Button`, `Card`, `Modal`, `Field`, `AccessGate`, `FlagGate`, `ConfirmButton`, `MediaImage`, `ImageUpload` rather than adding new primitives.
 
 ## Scope boundaries

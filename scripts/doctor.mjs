@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /* ============================================================================
- * npm run doctor · revisa las tres conexiones del sistema
+ * npm run doctor · revisa las conexiones del sistema (base de datos, inicio de
+ * sesión, imágenes y asistente)
  *
  * No modifica nada: sólo comprueba y reporta. Pensado para ejecutarlo después
  * de poner las variables de entorno y saber exactamente qué falta.
@@ -473,6 +474,105 @@ async function checkR2() {
   }
 }
 
+/* ------------------------------- Asistente (IA) ------------------------------ */
+
+async function checkAssistant() {
+  const apiKey = env("OPENROUTER_API_KEY");
+  const model = env("OPENROUTER_MODEL") ?? "deepseek/deepseek-v4.1-flash";
+  const base = (env("OPENROUTER_BASE_URL") ?? "https://openrouter.ai/api/v1").replace(/\/+$/, "");
+
+  if (!apiKey) {
+    report(
+      "Asistente",
+      "warn",
+      "sin configurar (falta OPENROUTER_API_KEY)",
+      "La aplicación funciona igual, pero no aparece el botón de ayuda. Ver INSTRUCCIONES.md, paso 7.",
+    );
+    return;
+  }
+
+  // ¿La llave es válida y qué tope de gasto tiene? La respuesta trae el crédito
+  // usado y el límite; no incluye la llave.
+  let info = null;
+  for (const path of ["/key", "/auth/key"]) {
+    try {
+      const response = await fetch(`${base}${path}`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (response.status === 401 || response.status === 403) {
+        report(
+          "Asistente",
+          "fail",
+          "OpenRouter rechazó la llave (OPENROUTER_API_KEY)",
+          "Revisa que esté completa y que no haya sido borrada o desactivada en openrouter.ai/keys.",
+        );
+        return;
+      }
+      if (response.ok) {
+        info = (await response.json())?.data ?? null;
+        break;
+      }
+    } catch {
+      // Sin red hacia el proveedor: se dice abajo, no se inventa un resultado.
+    }
+  }
+
+  if (!info) {
+    report(
+      "Asistente",
+      "warn",
+      "hay llave, pero no se pudo comprobar contra OpenRouter",
+      "Puede ser falta de internet. Vuelve a correr `npm run doctor` con conexión.",
+    );
+    return;
+  }
+
+  // ¿El modelo existe? Una errata en OPENROUTER_MODEL sólo se descubriría
+  // cuando alguien pregunte algo en plena barra.
+  try {
+    const response = await fetch(`${base}/models`, { signal: AbortSignal.timeout(15_000) });
+    const ids = new Set(((await response.json())?.data ?? []).map((m) => m.id));
+    if (ids.size && !ids.has(model)) {
+      report(
+        "Asistente · modelo",
+        "fail",
+        `el modelo "${model}" no existe en OpenRouter`,
+        "Corrige OPENROUTER_MODEL (el identificador completo, por ejemplo deepseek/deepseek-v4.1-flash).",
+      );
+      return;
+    }
+  } catch {
+    // El catálogo es una comprobación extra; si no responde no se bloquea nada.
+  }
+
+  const remaining = info.limit_remaining;
+  const capped = info.limit !== null && info.limit !== undefined;
+  report(
+    "Asistente",
+    "ok",
+    `conectado · modelo ${model}` +
+      (capped && typeof remaining === "number"
+        ? ` · quedan $${remaining.toFixed(2)} USD de crédito en la llave`
+        : ""),
+  );
+  if (!capped) {
+    report(
+      "Asistente · gasto",
+      "warn",
+      "la llave no tiene límite de crédito",
+      "Ponle un tope en openrouter.ai/keys. Es el único freno real al gasto: los límites de la aplicación son por instancia y no lo garantizan.",
+    );
+  } else if (typeof remaining === "number" && remaining <= 0) {
+    report(
+      "Asistente · gasto",
+      "fail",
+      "la llave ya no tiene crédito",
+      "Sube el límite de la llave o recarga saldo en openrouter.ai; mientras tanto el chat responde que está sin saldo.",
+    );
+  }
+}
+
 /* ---------------------------------- Resumen ---------------------------------- */
 
 await checkSupabase();
@@ -480,6 +580,8 @@ console.log("");
 await checkClerk();
 console.log("");
 await checkR2();
+console.log("");
+await checkAssistant();
 
 const failures = results.filter((r) => r.status === "fail");
 const warnings = results.filter((r) => r.status === "warn");
