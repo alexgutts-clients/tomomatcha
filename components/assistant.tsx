@@ -661,9 +661,6 @@ export function Assistant({ role }: { role: Role }) {
                 </Button>
               )}
             </div>
-            <p className="mt-2 px-1 text-[11px] leading-4 text-muted">
-              Puede equivocarse. Lo importante, confírmalo con un administrador.
-            </p>
           </form>
         </div>
       ) : null}
