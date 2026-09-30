@@ -77,8 +77,23 @@ export function r2Endpoint(): string | null {
  * y la calidad de los modelos baratos se mueven rápido, y no debería hacer
  * falta un despliegue para probar otro.
  */
+/**
+ * La llave tal como la espera el proveedor. En el panel del hosting es fácil
+ * pegarla entre comillas o con el «Bearer » que trae el ejemplo de la
+ * documentación; cualquiera de las dos hace que el proveedor la rechace y el
+ * error no dice por qué. Se quitan aquí en vez de exigir que se pegue perfecta.
+ */
+function cleanApiKey(value: string | null): string | null {
+  if (!value) return null;
+  const key = value
+    .replace(/^(["'`])([\s\S]*)\1$/, "$2")
+    .replace(/^Bearer(\s+|$)/i, "")
+    .trim();
+  return key || null;
+}
+
 export const assistant = {
-  apiKey: read("OPENROUTER_API_KEY"),
+  apiKey: cleanApiKey(read("OPENROUTER_API_KEY")),
   model: read("OPENROUTER_MODEL") ?? "deepseek/deepseek-v4.1-flash",
   /** Sólo para apuntar a un proxy o a un servidor de pruebas. */
   baseUrl:

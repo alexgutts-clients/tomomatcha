@@ -433,6 +433,10 @@ OPENROUTER_API_KEY=sk-or-...
 | Las fotos salen como imagen rota | `R2_PUBLIC_BASE_URL` mal escrita, o sin sesión | Quita la diagonal final; vuelve a iniciar sesión |
 | El corte de caja no cuadra con el día | Zona horaria equivocada | Ajustes → Zona horaria |
 | El punto de venta dice "caja cerrada" | El corte de hoy ya se registró | Corte de caja → Reabrir turno |
+| Asistente: "la llave fue rechazada" (código 401) | OpenRouter no reconoce `OPENROUTER_API_KEY` | Vuelve a copiar la llave completa de openrouter.ai/keys (una llave normal, no la de administración), pégala sin espacios y redespliega |
+| Asistente: "llegó al límite de gasto de su llave" (código 403) | La llave alcanzó su límite de crédito o está desactivada | En openrouter.ai/keys sube el límite de esa llave o actívala; no requiere redesplegar |
+| Asistente: "está sin saldo" (código 402) | La cuenta de OpenRouter no tiene créditos | Recarga en openrouter.ai/credits |
+| No aparece el botón del asistente | Falta `OPENROUTER_API_KEY` en ese entorno, o no se redesplegó | Paso 7 |
 
 ---
 

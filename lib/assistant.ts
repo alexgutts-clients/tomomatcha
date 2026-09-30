@@ -201,17 +201,26 @@ const UPSTREAM_TIMEOUT_MS = 60_000;
 
 function upstreamFailure(status: number): { status: number; error: string } {
   // Nada de nombres de proveedor ni de cuerpos crudos: quien lee esto está en
-  // la barra. El detalle exacto va al registro del servidor.
-  if (status === 401 || status === 403) {
+  // la barra. El detalle exacto va al registro del servidor. El código sí se
+  // muestra: no dice nada a quien atiende, pero a quien instaló le basta para
+  // saber qué revisar sin tener que abrir los registros.
+  const code = ` (código ${status})`;
+  if (status === 401) {
     return {
       status: 503,
-      error: "El asistente no está bien configurado. Avísale a quien instaló el sistema.",
+      error: `El asistente no está bien configurado: la llave fue rechazada. Avísale a quien instaló el sistema.${code}`,
+    };
+  }
+  if (status === 403) {
+    return {
+      status: 503,
+      error: `El asistente llegó al límite de gasto de su llave o la llave está bloqueada. Avísale a quien instaló el sistema.${code}`,
     };
   }
   if (status === 402) {
     return {
       status: 503,
-      error: "El asistente está sin saldo por ahora. Avísale a quien administra la instalación.",
+      error: `El asistente está sin saldo por ahora. Avísale a quien administra la instalación.${code}`,
     };
   }
   if (status === 429) {
@@ -222,7 +231,7 @@ function upstreamFailure(status: number): { status: number; error: string } {
   }
   return {
     status: 502,
-    error: "El asistente no pudo responder. Vuelve a intentar en un momento.",
+    error: `El asistente no pudo responder. Vuelve a intentar en un momento.${code}`,
   };
 }
 

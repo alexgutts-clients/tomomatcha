@@ -477,7 +477,12 @@ async function checkR2() {
 /* ------------------------------- Asistente (IA) ------------------------------ */
 
 async function checkAssistant() {
-  const apiKey = env("OPENROUTER_API_KEY");
+  // Igual que lib/env.ts: tolera la llave pegada entre comillas o con «Bearer ».
+  const apiKey =
+    env("OPENROUTER_API_KEY")
+      ?.replace(/^(["'`])([\s\S]*)\1$/, "$2")
+      .replace(/^Bearer(\s+|$)/i, "")
+      .trim() || null;
   const model = env("OPENROUTER_MODEL") ?? "deepseek/deepseek-v4.1-flash";
   const base = (env("OPENROUTER_BASE_URL") ?? "https://openrouter.ai/api/v1").replace(/\/+$/, "");
 
