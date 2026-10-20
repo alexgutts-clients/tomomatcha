@@ -336,6 +336,14 @@ export type Database = {
         Args: { p_item_id: string; p_staff_id?: string | null };
         Returns: string;
       };
+      /**
+       * Lo que un ticket consumió y aún no se le ha devuelto, por insumo
+       * (`…0012_inventario_exacto.sql`). La usan las devoluciones en SQL.
+       */
+      order_net_usage: {
+        Args: { p_order_id: string };
+        Returns: { ingredient_id: string; qty: number }[];
+      };
       close_cash: {
         Args: {
           p_counted: number;

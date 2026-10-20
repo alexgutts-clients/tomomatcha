@@ -156,6 +156,7 @@ El esquema vive en `supabase/migrations/` y es la única fuente de verdad:
 | `20260824000009_delete_order_item.sql` | `delete_order_item`: quitar un renglón y rehacer cuentas |
 | `20260824000010_categorias.sql` | Categorías editables: tabla `categories` en lugar del enum |
 | `20260824000011_historico_ventas.sql` | `sales_history`: el histórico completo, agrupado en la base |
+| `20260824000012_inventario_exacto.sql` | Stock sin tope en cero y con 3 decimales; devoluciones sobre el consumo neto del ticket |
 
 `lib/database.types.ts` es el espejo en TypeScript del esquema. **Al cambiar una
 migración hay que actualizarlo**, o el tipado dejará de proteger.

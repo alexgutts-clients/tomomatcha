@@ -431,7 +431,7 @@ Ruta «Administración de pedidos». Encabezado: «Solo administración». Sirve
 | --- | --- | --- | --- |
 | Dónde | Comandas | Administración de pedidos | Comandas y Administración de pedidos |
 | Qué pasa con la venta | Se **conserva** marcada como cancelada («Anulado» en Reportes) | Sigue existiendo sin ese producto | **Desaparece** de la base y de los reportes |
-| Insumos | Se devuelven | Se devuelven los de ese producto | Se devuelven (si no estaba cancelado) |
+| Insumos | Se devuelven | Se devuelven los de ese producto | Se devuelven (si no estaba cancelado; uno cancelado ya los devolvió) |
 | Dinero | Ya no suma en ninguna cifra | Se recalculan subtotal y total | Deja de existir |
 | Folio | Se conserva (explica un hueco) | Igual | **Queda un hueco** en los folios; no se reutiliza |
 | Se puede deshacer | No | No | No |
@@ -441,7 +441,7 @@ Ruta «Administración de pedidos». Encabezado: «Solo administración». Sirve
 
 ### 11.3 Cancelar un ticket
 - En Comandas: «Cancelar ticket» → «Sí, cancelar». Aviso: «Ticket #N cancelado — Se devolvieron los insumos y los puntos.»
-- Devuelve al inventario los insumos que esa venta descontó (lo mismo que se registró al cobrar). Si el módulo Inventario estaba apagado cuando se vendió, no había nada que devolver.
+- Devuelve al inventario los insumos que esa venta descontó y que todavía no se le habían devuelto: si antes se quitó un renglón, lo de ese renglón ya regresó y no vuelve a sumarse. Si el módulo Inventario estaba apagado cuando se vendió, no había nada que devolver.
 - La venta se queda con su folio, sus renglones y su total, pero **ninguna suma la cuenta**: ni Inicio, ni Reportes, ni el corte.
 - Funciona con tickets ya entregados.
 - **No se puede deshacer** ni reactivar; un ticket cancelado ya no se mueve («Un ticket cancelado ya no se mueve.»).
@@ -450,7 +450,7 @@ Ruta «Administración de pedidos». Encabezado: «Solo administración». Sirve
 ### 11.4 Quitar un renglón
 - En Administración de pedidos: despliega el ticket → «Quitar» junto al producto → «Se devuelven sus insumos y se recalcula el ticket.» → **«Sí, quitar»**. Aviso: «Producto quitado del ticket».
 - Recalcula subtotal y total con el descuento del ticket. **La propina se conserva** tal como la dejó el cliente y solo se recorta si el consumo baja por debajo de ella. Si hay una nota «Incluye $X de propina, que se conserva al quitar productos.»
-- Devuelve los insumos de ese producto según la receta actual, respetando si el pedido era para aquí (no devuelve empaque) y la leche elegida.
+- Devuelve los insumos de ese producto según la receta actual, respetando si el pedido era para aquí (no devuelve empaque) y la leche elegida. **Nunca devuelve más de lo que el ticket descontó**: si la receta cambió después de la venta, se devuelve como máximo lo que salió; si la venta se hizo con Inventario apagado o el ticket ya estaba cancelado, no devuelve nada.
 - **El último renglón no se puede quitar**: sale «Es el único producto del ticket; borra el ticket completo». Un renglón con cantidad 3 cuenta como un solo renglón.
 - Si el ticket tiene un solo renglón, en lugar de «Quitar» dice «Único producto».
 
@@ -497,10 +497,10 @@ Si Inventario está apagado en Ajustes, la pantalla dice «Inventario está desa
 - Buscador «Buscar insumo…» (por nombre; distingue acentos: «cafe» no encuentra «café») y filtros **Todos**, **En alerta** y **Correctos**.
 - Orden fijo: primero los que están en alerta (los más urgentes arriba) y luego el resto por nombre.
 - Cada fila muestra: nombre; etiqueta de nivel; «Empaque» si aplica; «Umbral: X (N% del objetivo) · Uso semanal: Y»; cuántos productos lo usan; una barra de nivel; la existencia actual; los botones − y +, «Recibir pedido» y «Contar»; y (administrador) «Editar» y «Eliminar».
-- Etiquetas de nivel: **«Crítico»** (rojo): existencia a la mitad del umbral o menos; **«Resurtir»** (ámbar): en el umbral o por debajo; **«En orden»** (verde): lo demás.
+- Etiquetas de nivel: **«Crítico»** (rojo): existencia a la mitad del umbral o menos, o en negativo; **«Resurtir»** (ámbar): en el umbral o por debajo; **«En orden»** (verde): lo demás.
 
 ### 12.3 Los cuatro movimientos y en qué se diferencian (lo que más se confunde)
-- **Botones − y +**: ajustes rápidos de una cantidad fija: **25 g**, **250 ml** o **1 pieza** según la unidad. El **−** se registra como **merma** (algo que se tiró o perdió) y el **+** como **entrada**. No muestran aviso al hacerlo. El **−** se desactiva cuando la existencia ya es 0.
+- **Botones − y +**: ajustes rápidos de una cantidad fija: **25 g**, **250 ml** o **1 pieza** según la unidad. El **−** se registra como **merma** (algo que se tiró o perdió) y el **+** como **entrada**. No muestran aviso al hacerlo. El **−** se desactiva cuando la existencia ya es 0 o menos, y se rechaza si dejaría la existencia por debajo de 0 («No hay tanta existencia registrada; si la cifra no cuadra con lo que hay, usa «Contar»»): no se puede tirar lo que no está registrado.
 - **«Recibir pedido»**: **suma** lo que llegó a lo que ya había. Recibir 200 vasos deja 200 vasos **más** de los que tenías. Se escribe en «Cantidad recibida (unidad)», muestra «Quedará en …» y se confirma con «Registrar entrada». Aviso: «Entrada registrada».
 - **«Contar»** (título «Conteo físico»): **reemplaza** el total por lo que contaste. Si cuentas 200 vasos quedan 200 exactos, sin importar lo que decía el sistema. Es la forma de volver a cuadrar. Se escribe en «Cantidad contada (unidad)» y se confirma con «Guardar conteo». Aviso: «Conteo registrado». La diferencia contra lo que decía el sistema queda registrada como ajuste.
 - **Venta**: descuenta sola según la receta.
@@ -536,9 +536,10 @@ En la fila, «Lo usan N productos · editar consumo» abre «Consumo de [insumo]
 - Un insumo nuevo con umbral 0 y existencia 0 aparece en el filtro «En alerta» pero con la etiqueta «En orden» (con umbral 0 la etiqueta no marca nada). Ponle un umbral.
 
 ### 12.8 Cosas que hay que saber
-- **La existencia nunca baja de 0.** Si la venta necesita más de lo que hay, el sistema deja 0.
-- **Una venta nunca se bloquea por falta de insumos.** Un producto con existencia 0 se sigue vendiendo. Nada lo pausa solo.
-- Como la existencia se queda en 0 pero el movimiento guarda el consumo completo, **cancelar o borrar un ticket después de haber llegado a 0 puede devolver más de lo que realmente se había descontado**, y **quitar un renglón y después cancelar el ticket completo puede devolver dos veces los insumos de ese renglón**. Es un comportamiento actual del sistema: cuando la existencia no cuadre, haz un **«Contar»** para dejar la cifra real.
+- **Cada venta descuenta exactamente lo que dice la receta, aunque la existencia quede en negativo.** Una existencia negativa (en rojo, con la nota «Se vendió más de lo registrado · Contar» y la etiqueta «Crítico») significa que se vendió más de lo que estaba capturado: casi siempre porque la existencia nunca se contó (el catálogo inicial arranca en 0) o porque llegó mercancía que no se registró con «Recibir pedido». Se arregla con **«Contar»**.
+- **Una venta nunca se bloquea por falta de insumos.** Un producto con existencia 0 o negativa se sigue vendiendo. Nada lo pausa solo.
+- Cancelar, borrar un ticket o quitar un renglón devuelven exactamente lo que ese ticket descontó y aún no se le había devuelto: nada se devuelve dos veces.
+- La existencia guarda hasta 3 decimales (igual que las recetas); la pantalla la muestra con 2.
 - Apagar Inventario en Ajustes hace que las ventas no descuenten y que las cancelaciones no devuelvan nada de esas ventas.
 - Todos los movimientos (venta, entrada, merma, ajuste, cancelación) quedan **registrados** en la base, pero **hoy no hay una pantalla para consultar esa bitácora**. Tampoco se pueden anotar comentarios en los movimientos desde la aplicación.
 - No hay importación ni exportación de inventario, ni proveedores, costos ni órdenes de compra.
@@ -783,8 +784,8 @@ Un administrador: Corte de caja → «Reabrir turno» → «Sí, reabrir». Se b
 3. Revisa que los productos que se venden tengan **receta** (etiqueta «Sin receta»): sin receta no descuentan.
 4. Revisa que el **empaque** (vasos, tapas) esté marcado como «Es empaque»; si no, se descuenta también en los pedidos «Para aquí».
 5. Si el módulo **Inventario está apagado** en Ajustes, las ventas no descuentan nada.
-6. Recuerda que una venta nunca se bloquea por falta de insumos y que la existencia nunca baja de 0.
-7. Cancelaciones y quitar renglones pueden devolver de más en algunos casos (sección 12.8): otro motivo para contar.
+6. Recuerda que una venta nunca se bloquea por falta de insumos: si la existencia sale **negativa**, se vendió más de lo registrado. Cuenta y registra las entradas con «Recibir pedido».
+7. Si la leche no descuenta, revisa que cada leche tenga un insumo ligado (Productos → Leches); sin insumo dice «No descuenta inventario».
 
 ### 18.7 «Se acabó un ingrediente»
 Pausa el producto que lo usa (Productos → interruptor ON/OFF; lo puede hacer un empleado) y vuelve a activarlo al resurtir. Registra la llegada con «Recibir pedido».
@@ -831,7 +832,7 @@ Solo administradores: Inicio, tarjeta «Venta de hoy» (incluye propina), o Cort
 
 **¿Por qué no aparece Mercado Pago como opción?** El módulo está apagado en Ajustes (administrador).
 
-**¿Qué pasa si vendo algo sin inventario?** Se vende igual; la existencia se queda en 0.
+**¿Qué pasa si vendo algo sin inventario?** Se vende igual y la existencia queda en negativo, en rojo, para avisar que hay que contar.
 
 **¿Se pueden imprimir tickets?** No, el sistema no imprime tickets ni comandas.
 
@@ -893,6 +894,7 @@ Solo administradores: Inicio, tarjeta «Venta de hoy» (incluye propina), o Cort
 | «Se perdió la conexión» | Sin internet o respuesta perdida. Ver 18.11 antes de repetir un cobro. |
 | «Este insumo se usa en N receta(s). Quítalo de ahí antes de eliminarlo.» | Quita el insumo de las recetas (Inventario → Consumo, o Productos) y vuelve a intentar. |
 | «Ya existe un producto / una categoría / un extra / un tipo de leche con ese nombre.» | Los nombres no se repiten (sin importar mayúsculas). |
+| «No hay tanta existencia registrada; si la cifra no cuadra con lo que hay, usa «Contar»» | Se intentó restar con − más de lo que el sistema tiene registrado. Si en el estante sí hay, la cifra está mal: usa «Contar» para dejar la real. |
 | «La receta repite un insumo. Súmalo en un solo renglón.» | Un insumo solo puede aparecer una vez en la receta. |
 | «La receta de este producto usa «leche elegida». Quita ese renglón antes de apagar la opción de leche.» | Quita primero «Leche elegida por el cliente» de la receta. |
 | «Esa categoría tiene N producto(s). Elige a qué categoría pasarlos antes de eliminarla.» | Usa «Eliminar…» y elige la categoría destino. |

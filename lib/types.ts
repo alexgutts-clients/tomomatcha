@@ -375,6 +375,8 @@ export type StockLevel = "critico" | "resurtir" | "ok";
 
 /** Un insumo entra en alerta cuando su existencia cae hasta el umbral. */
 export function stockLevel(ing: Ingredient): StockLevel {
+  // En negativo se vendió más de lo registrado: urge contar, haya umbral o no.
+  if (ing.stock < 0) return "critico";
   if (ing.min <= 0) return "ok";
   if (ing.stock <= ing.min * 0.5) return "critico";
   if (ing.stock <= ing.min) return "resurtir";

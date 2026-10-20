@@ -54,17 +54,27 @@ Business rules live in Postgres functions, not TypeScript:
 
 | Function | Migration | Role |
 | --- | --- | --- |
-| `create_order` | `…0002_rpc.sql`, redefined in `…0006_…` then `…0007_propina.sql` | Checkout: pricing, tip, stock, points, folio |
-| `cancel_order` | `…0003_cancel_order.sql` | Reverses stock and points; only before that day's cash close |
-| `delete_order` | `…0008_delete_order.sql` | Reverses effects then **deletes** the sale; admin-only, for clearing test data |
-| `delete_order_item` | `…0009_delete_order_item.sql` | Removes one line, returns its ingredients, recomputes the ticket |
+| `create_order` | `…0002_rpc.sql`, redefined in `…0006_…`, `…0007_propina.sql`, then `…0012_inventario_exacto.sql` | Checkout: pricing, tip, stock, points, folio |
+| `cancel_order` | `…0003_cancel_order.sql`, redefined in `…0012_…` | Reverses net stock and points; only before that day's cash close |
+| `delete_order` | `…0008_delete_order.sql`, redefined in `…0012_…` | Reverses effects then **deletes** the sale; admin-only, for clearing test data |
+| `delete_order_item` | `…0009_delete_order_item.sql`, redefined in `…0012_…` | Removes one line, returns its ingredients, recomputes the ticket |
 | `close_cash` | `…0002_rpc.sql`, redefined in `…0007_propina.sql` | Cash close, now also totalling tips |
-| `adjust_stock`, `adjust_points`, `business_day` | `…0002_rpc.sql` | Manual stock/point moves, operating-day calc |
+| `adjust_stock`, `adjust_points`, `business_day` | `…0002_rpc.sql` (`adjust_stock` redefined in `…0012_…`) | Manual stock/point moves, operating-day calc |
+| `order_net_usage` | `…0012_inventario_exacto.sql` | What a ticket consumed and hasn't been given back, per ingredient |
 | `sales_history` | `…0011_historico_ventas.sql` | Full sales history, grouped by day/week/month/year |
 
 `…0004_harden_function_grants.sql` revokes `EXECUTE` from `PUBLIC` on these.
 
-**When editing a function, add a new migration that `create or replace`s it — `…0007` holds the current `create_order` and `close_cash`.** Migrations are the only schema source of truth and are applied via the Supabase SQL Editor in filename order (or `supabase db push`).
+**When editing a function, add a new migration that `create or replace`s it — `…0012` holds the current `create_order`, `cancel_order`, `delete_order`, `delete_order_item` and `adjust_stock`; `…0007` the current `close_cash`.** Migrations are the only schema source of truth and are applied via the Supabase SQL Editor in filename order (or `supabase db push`).
+
+### Stock is the sum of its movements
+
+`ingredients.stock` must always equal what it started at plus the sum of its `inventory_movements` — `…0012_inventario_exacto.sql` exists because it didn't. Rules that follow:
+
+- **No floor at zero on sales.** `create_order` subtracts the full recipe even if stock goes negative; a sale is never blocked for lack of stock, and a negative is the signal "sold more than was registered — count". The old `greatest(0, …)` made sales look like they subtracted nothing while stock started at 0, and made later returns inflate stock.
+- **Returns are against net consumption.** `cancel_order`, `delete_order` and `delete_order_item` give back at most `order_net_usage(order)` — the order's `venta` movements minus its `cancelacion` movements — never the original sale. That is what stops removing a line and then cancelling from returning the line twice.
+- **Manual outflows are refused below zero** (`adjust_stock` with a negative delta), because that is a capture error; "Contar" (`setStock`) always lands on a counted, non-negative figure.
+- Stock and `stock_after` are `numeric(12,3)`, same scale as recipe quantities and `delta`, so no consumption rounds away.
 
 Tip (`orders.tip`) is the one amount that originates on the client. It is validated twice — `reqNumber(min: 0)` in the action, and capped at the discounted consumption inside `create_order`. It is stored in its own column, never dissolved into `total`, so the cash close can separate sale from tip. Discount applies to consumption only, never to the tip.
 
@@ -95,9 +105,9 @@ category the products move to.
 
 Test records must be removable in a fixed order, because each link holds the next: **sale → product → ingredient**. A sale's `inventory_movements` pin the ingredient; a product's recipe pins it too. So `delete_order` removes the sale and its movements, `deleteProduct` cascades the recipe away, and only then is the ingredient unreferenced and deletable.
 
-`delete_order` reverses stock and points **before** deleting the row, and that order is mandatory: `inventory_movements.order_id` is `on delete set null`, so deleting first would erase the only record of how much to give back and silently corrupt stock. It skips the reversal for already-cancelled tickets, whose movements `cancel_order` already reversed — reversing twice would inflate stock. It refuses once that day's cash close exists.
+`delete_order` reverses stock and points **before** deleting the row, and that order is mandatory: `inventory_movements.order_id` is `on delete set null`, so deleting first would erase the only record of how much to give back and silently corrupt stock. It returns the order's net consumption (`order_net_usage`), which is zero for an already-cancelled ticket — reversing twice would inflate stock. It refuses once that day's cash close exists.
 
-`delete_order_item` (surfaced in `/pedidos`, `components/modules/order-admin.tsx`) removes a single line. It cannot subtract that line's `inventory_movements` — those are aggregated per ingredient per order, not per line — so it recomputes the line's consumption from the recipe exactly as `create_order` did, honouring `service_mode` for packaging and the milk stored in the line's modifiers. It then recomputes subtotal/total/points and refuses to empty a ticket (use `delete_order`). Tip is preserved, only capped if consumption drops below it. This is why `OrderItem` carries `id`.
+`delete_order_item` (surfaced in `/pedidos`, `components/modules/order-admin.tsx`) removes a single line. It cannot subtract that line's `inventory_movements` — those are aggregated per ingredient per order, not per line — so it recomputes the line's consumption from the recipe exactly as `create_order` did, honouring `service_mode` for packaging and the milk stored in the line's modifiers, then caps each ingredient at the order's net consumption (covers a recipe edited after the sale, a sale made with inventory off, and cancelled tickets). It then recomputes subtotal/total/points and refuses to empty a ticket (use `delete_order`). Tip is preserved, only capped if consumption drops below it. This is why `OrderItem` carries `id`.
 
 `cancelOrder` and `deleteOrder` are not interchangeable: cancelling keeps the sale (it happened, and history must explain it) and is the right daily-operation tool; deleting destroys history and exists only for test cleanup. Both are `requireAdmin`.
 

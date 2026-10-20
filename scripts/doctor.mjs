@@ -78,6 +78,7 @@ const MIGRATIONS = {
   deleteOrder: "20260824000008_delete_order.sql",
   deleteItem: "20260824000009_delete_order_item.sql",
   categorias: "20260824000010_categorias.sql",
+  inventarioExacto: "20260824000012_inventario_exacto.sql",
 };
 
 const TABLES = {
@@ -122,6 +123,9 @@ const FUNCTIONS = {
   cancel_order: MIGRATIONS.cancel,
   delete_order: MIGRATIONS.deleteOrder,
   delete_order_item: MIGRATIONS.deleteItem,
+  // Sólo existe con la migración que quitó el tope en cero del stock: si falta,
+  // las ventas siguen sin restar del inventario cuando la existencia es 0.
+  order_net_usage: MIGRATIONS.inventarioExacto,
 };
 
 // Nombra los archivos pendientes, sin repetirlos y en el orden en que se

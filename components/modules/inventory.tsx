@@ -346,16 +346,31 @@ export function InventoryModule() {
                           <div
                             className={cx("h-full rounded-full", meta.bar)}
                             style={{
-                              width: `${Math.min(ing.stock / Math.max(ing.min * 2, 1), 1) * 100}%`,
+                              width: `${Math.min(Math.max(ing.stock, 0) / Math.max(ing.min * 2, 1), 1) * 100}%`,
                             }}
                           />
                         </div>
                       </div>
 
-                      <p className="display whitespace-nowrap text-xl text-ink">
-                        {Math.round(ing.stock * 100) / 100}
-                        <span className="ml-1 text-sm text-muted">{ing.unit}</span>
-                      </p>
+                      {/* Una venta nunca se bloquea por falta de insumos, así
+                          que la existencia puede quedar en negativo: es la
+                          señal de que se vendió más de lo registrado. */}
+                      <div className="whitespace-nowrap">
+                        <p
+                          className={cx(
+                            "display text-xl",
+                            ing.stock < 0 ? "text-danger" : "text-ink",
+                          )}
+                        >
+                          {Math.round(ing.stock * 100) / 100}
+                          <span className="ml-1 text-sm text-muted">{ing.unit}</span>
+                        </p>
+                        {ing.stock < 0 ? (
+                          <p className="text-[11px] font-bold text-danger">
+                            Se vendió más de lo registrado · Contar
+                          </p>
+                        ) : null}
+                      </div>
 
                       <div className="flex flex-wrap items-center gap-2">
                         <button
